@@ -1,0 +1,7 @@
+[package]
+name = "navi-app"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+navi-platform.workspace = true

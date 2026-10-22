@@ -1,0 +1,4 @@
+[package]
+name = "navi-state"
+version.workspace = true
+edition.workspace = true

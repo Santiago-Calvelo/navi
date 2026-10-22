@@ -1,0 +1,7 @@
+[package]
+name = "navi-demo"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+navi-state.workspace = true

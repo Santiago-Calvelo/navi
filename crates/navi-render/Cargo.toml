@@ -1,0 +1,10 @@
+[package]
+name = "navi-render"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+windows = { workspace = true, features = ["Win32_Graphics_DirectComposition", "Win32_Graphics_Direct3D", "Win32_Graphics_Direct3D11", "Win32_Graphics_Dxgi"] }
+navi-ui.workspace = true
+navi-state.workspace = true
+navi-demo.workspace = true
