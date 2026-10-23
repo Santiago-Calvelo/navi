@@ -57,7 +57,7 @@ impl Default for ReactionConfig {
             cooldown_ms: 700,
             simultaneous: 1,
             suppress_fullscreen: true,
-            intensity: Intensity::Experimental,
+            intensity: Intensity::Anomalous,
             focus_family: Family::StackV2,
             click_family: Family::ClickPulse,
             drag_family: Family::DragConnector,
@@ -121,9 +121,12 @@ impl ReactionEngine {
         // Activating the dragged application's window must not replace the
         // connector with a focus effect halfway through the same gesture.
         if self.accepted_drag.is_some()
-            && self.active.iter().any(|r| matches!(
-                r.event.kind, DesktopKind::MouseDragStart | DesktopKind::MouseDragMove
-            ))
+            && self.active.iter().any(|r| {
+                matches!(
+                    r.event.kind,
+                    DesktopKind::MouseDragStart | DesktopKind::MouseDragMove
+                )
+            })
         {
             self.last_focus = Some(event.source);
             return ReactionDecision::Unchanged;

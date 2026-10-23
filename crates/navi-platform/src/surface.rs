@@ -78,7 +78,7 @@ impl Default for SurfaceManager {
             effect_anchor: SurfaceAnchor::WorkArea,
             avoid: None,
             focus_effect: None,
-            placement: Placement::WindowAnchor,
+            placement: Placement::SafeRandom,
             seed: None,
             monitors: Vec::new(),
             exclusions: [None; 3],
