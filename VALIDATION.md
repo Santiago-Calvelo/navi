@@ -1,5 +1,7 @@
 # Validación · LayerStack v2, FracturedHalo y cursor · 21 de octubre de 2026
 
+> Registro del hito visual anterior. La etapa textual y su procedimiento actual se documentan en [docs/validation.md](docs/validation.md) y [docs/progress.md](docs/progress.md).
+
 La revisión actual integra el trabajo de los tres subagentes y conserva el foco previamente validado por el usuario. Informe completo, archivos, controles, mediciones y procedimiento manual: [docs/PARALLEL_EFFECTS.md](docs/PARALLEL_EFFECTS.md).
 
 - **41 pruebas unitarias aprobadas**: plataforma 18, renderer 5, estado 18; doc-tests sin fallos.
