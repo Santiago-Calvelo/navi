@@ -1,110 +1,94 @@
-# NAVI · Presencia compacta
+# NAVI
 
-Aplicación nativa en Rust, Win32, Direct2D y DirectWrite, con un núcleo textual determinista. El indicador y la tarjeta compacta son la experiencia inicial; el panel original se conserva como consola expandida. WindowFocus observa cambios reales de ventana activa y produce una manifestación breve. Las demos siguen siendo simuladas; el texto enviado normalmente usa herramientas locales explícitas. No hay modelo de IA ni reconocimiento de voz.
+NAVI es una presencia computacional nativa para Windows. Su objetivo es que la computadora pueda comunicarse con la persona mediante señales visuales, contexto y respuestas directas, sin convertirse en un dashboard que cubra el escritorio ni en un chatbot superpuesto.
 
-NAVI explora una interfaz que se integra con el escritorio de Windows como una presencia discreta. El proceso mantiene un indicador mínimo en reposo, muestra superficies transitorias sólo cuando hay una interacción o reacción válida y devuelve la presencia al estado mínimo al terminar.
+La aplicación mantiene una presencia mínima en reposo y despliega superficies breves cuando existe una interacción, un cambio relevante del entorno o una respuesta que necesita representación visual. Las superficies se integran con el escritorio real, no capturan clics cuando son decorativas y no roban el foco salvo que el usuario invoque explícitamente la interfaz.
 
-Las reglas para investigar, aprobar alcance, dividir el trabajo y mantener diffs pequeños están en [AGENTS.md](AGENTS.md). La implementación no se inicia sólo por detectar una oportunidad: primero se analiza el problema, se comparan alternativas y se acuerda el alcance.
+## Principios
 
-Esta revisión incorpora **LayerStack v2, FracturedHalo, clics y arrastres reales**. Contratos, responsabilidades de los tres subagentes, controles nuevos, límites y prueba manual: [docs/PARALLEL_EFFECTS.md](docs/PARALLEL_EFFECTS.md).
+- La computadora se expresa como NAVI: las respuestas describen resultados reales y evitan lenguaje de intermediario.
+- La interfaz es nativa, compacta y transitoria; la consola expandida queda disponible para tareas complejas.
+- La animación tiene significado contextual y duración finita. El reposo no ejecuta un bucle visual permanente.
+- El estado, la observación del escritorio, la gestión de superficies y el renderizado permanecen separados.
+- Las acciones son explícitas, registradas y validadas. No se ejecutan comandos arbitrarios derivados del texto.
+- La información del escritorio se consulta bajo demanda y con metadatos mínimos; NAVI no lee títulos, contenido, credenciales ni historiales de las aplicaciones.
 
-## Estado del proyecto
+## Tecnología
 
-El prototipo actual compila para Windows x64 y conserva la consola expandida junto con la experiencia compacta. La ruta de foco, los renderers holográficos y el observador de cursor cuentan con pruebas automatizadas y diagnósticos nativos propios. La prueba manual entre aplicaciones de la revisión visual todavía debe ejecutarse con el usuario en Explorador, Firefox y VS Code; no se reemplaza por Computer Use ni por eventos sintéticos.
+NAVI está construido con Rust 2021, Win32, Direct2D y DirectWrite. No utiliza WebView, Electron, Tauri, motores de juego, servidor ni runtime de JavaScript.
 
-La etapa textual añade normalización, router, registro de herramientas, permisos, confirmación y contexto volátil. Una solicitud desconocida devuelve `NeedsProvider`; no hay proveedores conectados ni ejecución arbitraria de comandos. Arquitectura y estado actuales: [docs/architecture.md](docs/architecture.md) y [docs/progress.md](docs/progress.md).
+El workspace se divide en estos crates:
 
-Para escribir, hacé clic en el indicador o presioná **Ctrl+Alt+Espacio**. El panel compacto pregunta «¿Qué necesitás?»; tras dos segundos sin escribir muestra `_` titilando. Es espera de texto, sin micrófono. Escribí y usá Enter: `ayuda`, `qué hora es`, `estado del sistema` o `abrí la calculadora`. La calculadora se inicia sin código de confirmación. Su resultado dispara FracturedHalo; rojo si falla, posición y ángulo distintos en el monitor enfocado. Escape conserva el borrador. Ya no se abre «Tu espacio» ni se usa ActionProjection.
+| Crate | Responsabilidad |
+| --- | --- |
+| `navi-app` | Arranque, entrada y diagnósticos |
+| `navi-agent` | Mensajes, contexto, router determinista, herramientas y respuestas |
+| `navi-state` | Estados, eventos y políticas puras |
+| `navi-platform` | HWND, bandeja, foco, observadores, superficies y Windows |
+| `navi-render` | Direct2D, DirectWrite y composiciones con alpha |
+| `navi-ui` | Geometría, tamaños y hit testing |
+| `navi-demo` | Escenarios deterministas para demostración |
 
-La entrada compacta y consola aceptan 120 caracteres; núcleo 512, respuesta visible 240 y contexto ocho turnos volátiles. Permisos, parámetros estrictos y confirmaciones opcionales se conservan. El resultado de calculadora confirma inicio aceptado por Windows, no ventana lista. Voz, IA y autonomía quedan fuera.
+El flujo textual es:
 
-## Compilar y abrir
-
-Requisitos: Windows 10/11 x64, Rust estable MSVC y Visual Studio Build Tools con Desktop development with C++ y Windows SDK. Desde PowerShell en `F:\navi`:
-
-```powershell
-cargo build --release --offline -p navi-app
-.\target\release\navi-app.exe
+```text
+Entrada → normalización y contexto → router determinista
+       → herramienta registrada → validación y permisos
+       → ToolHost → respuesta estructurada → presentación visual
 ```
 
-El ejecutable oficial es únicamente `F:\navi\target\release\navi-app.exe`. Cerrar NAVI normalmente desde la bandeja antes de recompilar si Windows bloquea el archivo. No desviar una entrega de producción a otro `target-dir`. Inventario visual, diagnóstico y contrato de variación pendiente de aprobación: [docs/visual-recovery.md](docs/visual-recovery.md).
+Cuando una solicitud no puede resolverse de forma determinista, NAVI devuelve un resultado explícito para una futura integración con un proveedor de inteligencia. La IA, la voz y la autonomía en segundo plano no forman parte del núcleo actual.
 
-Arranca sin solicitar foco, mostrando un indicador `navi_` de **88 × 28 DIP**, a 20 DIP de los bordes inferior y derecho del área útil del monitor. La tarjeta mide **320 × 104 DIP**; el texto largo incrementa su altura hacia arriba. A escala 125%, la tarjeta inicial equivale a 400 × 130 píxeles físicos.
+## Superficies y reacciones
 
-## WindowFocus automático
+El indicador `navi_`, la tarjeta compacta y la consola comparten la experiencia principal. Las superficies decorativas usan un overlay transparente y click-through, sin crear un HWND por partícula o línea.
 
-Al iniciar, las reacciones de foco están activadas. Sin invocar el panel, alterná entre Explorador de archivos, Firefox y VS Code, esperando al menos un segundo entre cambios. Una ventana principal válida dispara **LayerStack v2**, proporcional al monitor, durante unos **850 ms**. El anclaje inicial es junto a su borde superior derecho; puede cambiarse a NearCursor o SafeRandom. El indicador permanece visible durante la manifestación y al terminar; no se borra ni se contrae una sesión o consola abierta por el usuario.
+- `LayerStack v2`: cambios reales de ventana activa.
+- `FracturedHalo`: resultado de acciones; usa rojo cuando la acción falla.
+- `ClickPulse`: clics.
+- `DragConnector`: arrastres, conservando el ancla entre monitores.
+- `ContextFragment`: información contextual bajo demanda, como aplicaciones abiertas y actividad de CPU.
+- `SignalField` y `Sutura`: composiciones disponibles para diagnóstico y futuras decisiones de producto.
 
-La ruta es `EVENT_SYSTEM_FOREGROUND → DesktopObserver → ReactionEngine → SurfaceManager → overlay Direct2D`. El observador descarta ventanas propias, auxiliares, minimizadas y notificaciones que ya no corresponden al foreground actual. El motor agrupa duplicados, aplica un cooldown de **700 ms** y cancela dibujos obsoletos si el foco vuelve a cambiar. No hay disparos diferidos para ventanas que ya perdieron el foco.
+Los estudios Astra —Palimpsesto, Nacre, Herbario, Umbral y el laboratorio de Sutura— se conservan en `experiments/visual-genesis/` como investigación visual aislada. No son funcionalidades operativas de NAVI.
 
-El tamaño y anclaje usan el área útil y DPI del monitor de la ventana enfocada, sin cambiar la posición del indicador ni los anclajes de las demos. La ventana decorativa usa alpha por píxel, `WS_EX_TRANSPARENT`, `WS_EX_NOACTIVATE` y posicionamiento sin activación. Sus recursos y temporizador se liberan al terminar. No se leen títulos, texto, contraseñas ni contenido de aplicaciones, ni se guarda un historial de eventos.
+## Uso
 
-Desde la bandeja o el menú contextual se puede marcar/desmarcar **Reaccionar a cambios de foco**. **Desactivar todos los efectos** también desactiva estas reacciones. Los efectos de sesión simulada son una opción independiente. Si no se pudo instalar el observador, NAVI sigue funcionando y registra el error en `%TEMP%\navi-observer-error.log`; la opción de foco queda deshabilitada.
+Requisitos: Windows 10/11 x64, Rust estable con toolchain MSVC, Visual Studio Build Tools y Windows SDK.
 
-La integración de foco anterior fue confirmada por el usuario en una prueba manual real. Esta revisión visual y las reacciones del mouse **requieren una nueva validación manual** según [docs/PARALLEL_EFFECTS.md](docs/PARALLEL_EFFECTS.md). No requiere Computer Use ni cambios en el navegador.
-
-## Controles
-
-| Acción | Control |
-| --- | --- |
-| Abrir / ocultar entrada compacta | Ctrl+Alt+Espacio; Alt+Espacio también disponible |
-| Abrir con el mouse | Clic en el indicador o bandeja → Escribir |
-| Consola original / compacta | Ctrl+Alt+N; Ctrl+N dentro de NAVI |
-| Recorrer demo desde otra aplicación | Ctrl+Alt+D |
-| Recorrer demo en consola | F6 o clic en su estado inferior |
-| Estados simulados en consola | F1, F2, F3, F4, F5 |
-| Reposo | F7 |
-| Contraer sin terminar el proceso | Esc, F8, Alt+F4 o menú contextual; el indicador permanece |
-| Reacciones automáticas de foco | Bandeja → Reaccionar a cambios de foco |
-| Diagnósticos sin uso cotidiano | Bandeja → Sutura, SignalField o ContextFragment; éste usa datos simulados |
-| Escucha simulada en consola | Ctrl+K; no activa audio |
-| Texto compacto | Escribir, Backspace y Enter; Escape conserva borrador; sin selección/pegado nuevos |
-| Resultado de acciones | Bandeja → FracturedHalo · resultados de acciones; duración 1,8 s |
-| Terminar NAVI | Clic derecho → Salir de NAVI; Ctrl+Shift+Q dentro de NAVI |
-
-El menú de clic derecho permite elegir los seis estados y configurar el indicador. Si Ctrl+Alt+Espacio y Alt+Espacio están ocupados, se conserva el acceso por clic y se registra el conflicto en `%TEMP%\navi-hotkeys.log`. Si el atajo global de demo está ocupado, se puede usar el menú o F6 en la consola.
-
-Respuestas y errores sin borrador ni confirmación duran **cuatro segundos** y vuelven al indicador. Borradores, solicitudes activas, espera de teclado y consola no se cierran por este temporizador. Contraer explícitamente conserva el texto sin enviar.
-
-Sólo una invocación explícita por teclado o clic solicita foco. El inicio y las reacciones pasivas no lo solicitan. Al contraer NAVI, se intenta devolverlo a la ventana anterior únicamente si NAVI todavía lo tenía. Las superficies son tool windows sin entrada en la barra de tareas ni Alt+Tab: se recuperan con atajos y desde la bandeja. Las preferencias duran esta ejecución.
-
-## Arquitectura
-
-Se conservan los seis crates del prototipo y se añade el núcleo textual puro:
-
-| Componente | Responsabilidad |
-| --- | --- |
-| `navi-app` | Entrada y diagnóstico |
-| `navi-agent` | Mensajes, contexto, router, registro, permisos y respuesta estructurada; sin Windows ni dependencias externas |
-| `navi-platform::surface::SurfaceManager` | Indicador persistente, visibilidad, respuestas y planes transitorios de foco con monitor y DPI propios |
-| `navi-platform::desktop_observer` | WinEvents fuera de proceso y metadatos geométricos del foreground |
-| `navi-state::reactions::ReactionEngine` | Duplicados, cooldown, supresión y ciclo de vida; independiente de Win32 y renderer |
-| `navi-platform::focus_reaction` | Coordinación de política, superficie y cancelación sin mutar la sesión |
-| `navi-platform` | HWND, mensajes, monitor, DPI, foco, menús y temporizadores |
-| `navi-render` | Direct2D/DirectWrite, superficie BGRA premultiplicada y recursos gráficos |
-| `navi-ui` | Presentación, tamaños según contenido y hit testing |
-| `navi-state` | Estados y eventos tipados independientes de Windows |
-| `navi-demo` | Escenarios y señal determinista |
-
-`SurfaceManager` no importa renderer, HWND ni APIs de Windows. Consume geometría y DPI y devuelve planes de presentación. El anclaje temporal reactivo se almacena por separado del anclaje de las demos. LayerStack v2, FracturedHalo, los pulsos de clic y los conectores de arrastre comparten un único overlay decorativo; v1 se conserva como alternativa de debug.
-
-El HWND de NAVI cambia entre indicador, tarjeta y consola; la escritura usa un HWND independiente con controles Win32. La tarjeta elimina barra de título y pestañas; conserva firma, mensaje y estado. Se conserva el dibujo original de consola con arrastre y fijación. La posición de consola dura la ejecución. El renderer crea componentes reales, sin imágenes de fondo; Windows compone el escritorio a través del alpha. Se solicita Cascadia Mono a DirectWrite, con sustitución del sistema si falta; el campo nativo usa Segoe UI.
-
-En reposo y oculto no hay temporizadores ni dibujo continuo. Escucha/procesamiento usan 20 FPS. La interferencia tiene un vencimiento monotónico de unos 160 ms al invocar o entrar en error. La respuesta usa un temporizador de vencimiento. Los mensajes tardíos de temporizadores cancelados se ignoran. No se vuelve a posicionar una ventana cuyos límites no cambiaron. Ante un fallo de dibujo se recrea el renderer una vez.
-
-## Validación reproducible
+Desde PowerShell:
 
 ```powershell
-cargo test --workspace
-cargo clippy --workspace -- -D warnings
-cargo fmt --all -- --check
-New-Item -ItemType Directory -Path artifacts\canonical -Force
-$probe = Start-Process -FilePath 'F:\navi\target\release\navi-app.exe' -ArgumentList '--snapshot', 'F:\navi\artifacts\canonical\compact.bmp' -WindowStyle Hidden -Wait -PassThru
-if ($probe.ExitCode -ne 0) { throw 'Verificación nativa fallida: revisar artifacts/canonical/compact.json' }
-powershell.exe -ExecutionPolicy Bypass -File .\scripts\export-preview.ps1 -Source 'F:\navi\artifacts\canonical\compact.bmp' -Destination 'F:\navi\artifacts\canonical\compact.png'
-Get-Content .\artifacts\canonical\compact.json
+Set-Location F:\navi
+.\scripts\build-run.ps1
 ```
 
-La prueba abre una ventana real y dirige mensajes Win32 a su propio HWND. Espera dos vencimientos reales de cuatro segundos. Exporta indicador, tarjeta, texto largo, escucha, procesamiento, respuesta, error, consola y cuatro escalas DPI, con un informe JSON. No equivale a una prueba física de teclado/ratón ni a mover la ventana entre monitores. Los PNG son artefactos de revisión, no recursos utilizados en la interfaz.
+El script cierra la instancia oficial de NAVI de forma ordenada, compila en release offline, inicia la aplicación y termina con `OK` cuando todo salió correctamente.
 
-Un fallo de arranque se guarda en `%TEMP%\navi-error.log` y termina con código 1. Ver [validación actual y pasos manuales](docs/validation.md) y [VALIDATION.md](VALIDATION.md) para antecedentes.
+El ejecutable oficial es:
+
+```text
+F:\navi\target\release\navi-app.exe
+```
+
+Para invocar la interfaz compacta:
+
+- `Ctrl+Alt+Espacio` o `Alt+Espacio` abre y oculta la entrada.
+- Clic en el indicador o en la bandeja abre el modo de escritura.
+- `Ctrl+Alt+N` alterna la consola expandida.
+- `Esc` contrae la superficie sin cerrar NAVI.
+- El menú contextual de la bandeja permite configurar reacciones, diagnósticos y salida.
+
+La entrada compacta pregunta «¿Qué necesitás?». Después de un breve intervalo muestra `_` como señal de espera. Las herramientas deterministas actuales cubren ayuda, hora, estado del sistema y apertura segura de la calculadora.
+
+## Desarrollo
+
+Antes de modificar código se revisan `AGENTS.md`, la arquitectura y las decisiones registradas. Los cambios se dividen por funcionalidad, mantienen diffs pequeños y se validan con compilación release. La validación visual, manual y de hardware se realiza sobre Windows real.
+
+Documentación de referencia:
+
+- [AGENTS.md](AGENTS.md): reglas de trabajo y límites de arquitectura.
+- [docs/architecture.md](docs/architecture.md): contratos y flujo interno.
+- [docs/visual-direction.md](docs/visual-direction.md): dirección estética.
+- [docs/validation.md](docs/validation.md): comandos y cobertura de validación.
+- [docs/decisions/](docs/decisions/): decisiones arquitectónicas duraderas.
