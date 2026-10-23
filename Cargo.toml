@@ -13,6 +13,7 @@ navi-ui = { path = "crates/navi-ui" }
 navi-render = { path = "crates/navi-render" }
 navi-demo = { path = "crates/navi-demo" }
 navi-platform = { path = "crates/navi-platform" }
+navi-agent = { path = "crates/navi-agent" }
 
 [profile.release]
 lto = true

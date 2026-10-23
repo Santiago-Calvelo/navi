@@ -3,6 +3,10 @@
 version = 4
 
 [[package]]
+name = "navi-agent"
+version = "0.1.0"
+
+[[package]]
 name = "navi-app"
 version = "0.1.0"
 dependencies = [
@@ -20,6 +24,7 @@ dependencies = [
 name = "navi-platform"
 version = "0.1.0"
 dependencies = [
+ "navi-agent",
  "navi-demo",
  "navi-render",
  "navi-state",
