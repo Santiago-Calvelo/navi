@@ -56,7 +56,11 @@ unsafe fn covered(monitor: &MonitorArea) -> bool {
         y: (i64::from(r.top) + (i64::from(r.bottom) - i64::from(r.top)) / 2) as i32,
     };
     let window = GetAncestor(WindowFromPoint(point), GA_ROOT);
+    let mut pid = 0;
+    GetWindowThreadProcessId(window, Some(&mut pid));
     if window.0 == 0
+        || pid == std::process::id()
+        || IsZoomed(window).as_bool()
         || window == GetShellWindow()
         || window == GetDesktopWindow()
         || !IsWindowVisible(window).as_bool()

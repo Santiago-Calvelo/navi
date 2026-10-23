@@ -505,6 +505,22 @@ unsafe extern "system" fn procedure(hwnd: HWND, message: u32, wp: WPARAM, lp: LP
             return LRESULT(0);
         }
         desktop_observer::MESSAGE => {
+            // Windows can report foreground before a taskbar restore has
+            // finished updating visibility, minimized state and geometry.
+            let _ = SetTimer(hwnd, 6, 120, None);
+            return LRESULT(0);
+        }
+        WM_TIMER if wp.0 == 6 => {
+            let _ = KillTimer(hwnd, 6);
+            let _ = PostMessageW(
+                hwnd,
+                desktop_observer::SETTLED_MESSAGE,
+                WPARAM(desktop_observer::FOCUS_EVENT as usize),
+                LPARAM(GetForegroundWindow().0),
+            );
+            return LRESULT(0);
+        }
+        desktop_observer::SETTLED_MESSAGE => {
             let source = HWND(lp.0);
             if !desktop_observer::is_current_focus_message(
                 wp.0 as u32,

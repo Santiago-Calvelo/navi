@@ -5,6 +5,7 @@ use std::sync::atomic::{AtomicIsize, Ordering};
 use windows::Win32::{Graphics::Dwm::*, UI::Accessibility::*};
 
 pub const MESSAGE: u32 = WM_APP + 40;
+pub const SETTLED_MESSAGE: u32 = WM_APP + 42;
 pub const FOCUS_EVENT: u32 = EVENT_SYSTEM_FOREGROUND;
 static SINK: AtomicIsize = AtomicIsize::new(0);
 
@@ -13,7 +14,8 @@ pub struct DesktopObserver {
 }
 
 fn is_window_focus_event(event: u32, hwnd: HWND, object: i32, child: i32) -> bool {
-    event == FOCUS_EVENT && hwnd.0 != 0 && object == 0 && child == 0
+    matches!(event, FOCUS_EVENT | EVENT_SYSTEM_MINIMIZEEND)
+        && hwnd.0 != 0 && object == 0 && child == 0
 }
 
 pub fn is_current_focus_message(event: u32, source: HWND, current: HWND) -> bool {
@@ -34,7 +36,7 @@ unsafe extern "system" fn event_callback(
     }
     let sink = HWND(SINK.load(Ordering::Relaxed));
     if sink.0 != 0 {
-        let _ = PostMessageW(sink, MESSAGE, WPARAM(event as usize), LPARAM(hwnd.0));
+        let _ = PostMessageW(sink, MESSAGE, WPARAM(FOCUS_EVENT as usize), LPARAM(hwnd.0));
     }
 }
 
@@ -52,8 +54,21 @@ impl DesktopObserver {
         if hook.0 == 0 {
             return Err(Error::from_win32());
         }
+        let restored = SetWinEventHook(
+            EVENT_SYSTEM_MINIMIZEEND,
+            EVENT_SYSTEM_MINIMIZEEND,
+            None,
+            Some(event_callback),
+            0,
+            0,
+            WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS,
+        );
+        if restored.0 == 0 {
+            let _ = UnhookWinEvent(hook);
+            return Err(Error::from_win32());
+        }
         SINK.store(sink.0, Ordering::Relaxed);
-        Ok(Self { hooks: vec![hook] })
+        Ok(Self { hooks: vec![hook, restored] })
     }
 }
 impl Drop for DesktopObserver {
@@ -104,7 +119,8 @@ pub unsafe fn resolve(hwnd: HWND) -> Option<DesktopEvent> {
     if !GetMonitorInfoW(MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST), &mut info).as_bool() {
         return None;
     }
-    let full = rect.left <= info.rcMonitor.left
+    let full = !IsZoomed(hwnd).as_bool()
+        && rect.left <= info.rcMonitor.left
         && rect.top <= info.rcMonitor.top
         && rect.right >= info.rcMonitor.right
         && rect.bottom >= info.rcMonitor.bottom;
