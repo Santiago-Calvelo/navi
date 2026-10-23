@@ -46,6 +46,7 @@ pub struct Renderer {
     dib: Dib,
     width: i32,
     height: i32,
+    canvas: (f32, f32),
 }
 
 fn color(ink: Ink, opacity: f32) -> D2D1_COLOR_F {
@@ -62,6 +63,15 @@ fn point(p: Point) -> D2D_POINT_2F {
 
 impl Renderer {
     pub unsafe fn new(width: i32, height: i32) -> Result<Self> {
+        Self::canvas(width, height, WIDTH, HEIGHT)
+    }
+
+    pub unsafe fn canvas(
+        width: i32,
+        height: i32,
+        logical_width: f32,
+        logical_height: f32,
+    ) -> Result<Self> {
         if width <= 0 || height <= 0 {
             return Err(Error::new(E_INVALIDARG, "Invalid surface dimensions"));
         }
@@ -113,14 +123,14 @@ impl Renderer {
             },
         )?;
         target.SetTextAntialiasMode(D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE);
-        let scale = (width as f32 / WIDTH).min(height as f32 / HEIGHT);
+        let scale = (width as f32 / logical_width).min(height as f32 / logical_height);
         target.SetTransform(&Matrix3x2 {
             M11: scale,
             M12: 0.0,
             M21: 0.0,
             M22: scale,
-            M31: (width as f32 - WIDTH * scale) * 0.5,
-            M32: (height as f32 - HEIGHT * scale) * 0.5,
+            M31: (width as f32 - logical_width * scale) * 0.5,
+            M32: (height as f32 - logical_height * scale) * 0.5,
         });
         let brush = target.CreateSolidColorBrush(&color(Ink(0xffffff, 1.0), 1.0), None)?;
         let write: IDWriteFactory = DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED)?;
@@ -133,12 +143,23 @@ impl Renderer {
             dib,
             width,
             height,
+            canvas: (logical_width, logical_height),
         })
     }
 
     unsafe fn marks(&mut self, frame: &Frame) -> Result<()> {
         for mark in &frame.marks {
             match mark {
+                Mark::Clip(r) => self.target.PushAxisAlignedClip(
+                    &D2D_RECT_F {
+                        left: r[0],
+                        top: r[1],
+                        right: r[2],
+                        bottom: r[3],
+                    },
+                    D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,
+                ),
+                Mark::Unclip => self.target.PopAxisAlignedClip(),
                 Mark::Path {
                     points,
                     closed,
@@ -210,8 +231,8 @@ impl Renderer {
                         &D2D_RECT_F {
                             left: origin.0,
                             top: origin.1,
-                            right: WIDTH,
-                            bottom: HEIGHT,
+                            right: self.canvas.0,
+                            bottom: self.canvas.1,
                         },
                         &self.brush,
                         D2D1_DRAW_TEXT_OPTIONS_NONE,

@@ -17,6 +17,8 @@ pub const DARK: Ink = Ink(0x101c21, 0.96);
 
 #[derive(Debug, PartialEq)]
 pub enum Mark {
+    Clip([f32; 4]),
+    Unclip,
     Path {
         points: Vec<Point>,
         closed: bool,
@@ -177,6 +179,7 @@ mod tests {
                 assert!((0.0..=1.0).contains(&f.opacity));
                 for mark in f.marks {
                     match mark {
+                        Mark::Clip(_) | Mark::Unclip => {}
                         Mark::Path { points, .. } => {
                             for (x, y) in points {
                                 assert!(

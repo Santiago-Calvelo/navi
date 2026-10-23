@@ -1,3 +1,4 @@
+mod experience;
 mod experiment;
 mod experiments;
 mod platform;
@@ -11,6 +12,9 @@ pub struct Options {
     pub seconds: f32,
     pub reduced: bool,
     pub monitor: usize,
+    pub experience: bool,
+    pub tour: bool,
+    pub smoke: bool,
 }
 
 fn parse(args: impl Iterator<Item = String>) -> Result<Option<Options>, String> {
@@ -20,6 +24,9 @@ fn parse(args: impl Iterator<Item = String>) -> Result<Option<Options>, String> 
         seconds: 16.0,
         reduced: false,
         monitor: 0,
+        experience: false,
+        tour: false,
+        smoke: false,
     };
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -31,7 +38,7 @@ fn parse(args: impl Iterator<Item = String>) -> Result<Option<Options>, String> 
                         entry.id, entry.kind, entry.name, entry.thesis
                     );
                 }
-                println!("\n--experiment ID | --all   --seconds 4..120   --monitor N (0 = primary)\n--reduced-motion          --list\nEach study exits automatically. Ctrl+C in the launching terminal stops the process.\nNo overlay keyboard, clicks, global shortcuts or desktop observers.");
+                println!("\n--experience             Persistent interactive experience: Margen\n--tour                   Guided experience; click/type to take control\n--experiment ID | --all   Passive studies; --seconds 4..120\n--monitor N (0 = primary) --reduced-motion --list\nMargen: click the edge to open, Enter to continue, Escape to fold, × to exit.\nAll data and actions are simulated. No global shortcuts or desktop observers.");
                 return Ok(None);
             }
             "--experiment" => {
@@ -60,6 +67,16 @@ fn parse(args: impl Iterator<Item = String>) -> Result<Option<Options>, String> 
                     .map_err(|_| "Invalid monitor index")?
             }
             "--reduced-motion" => options.reduced = true,
+            "--experience" => options.experience = true,
+            "--tour" => {
+                options.experience = true;
+                options.tour = true;
+            }
+            "--smoke" => {
+                options.experience = true;
+                options.tour = true;
+                options.smoke = true;
+            }
             _ => return Err(format!("Unknown option: {arg}")),
         }
     }
@@ -69,10 +86,12 @@ fn parse(args: impl Iterator<Item = String>) -> Result<Option<Options>, String> 
 fn main() {
     let result = match parse(std::env::args().skip(1)) {
         Ok(Some(options)) => {
-            println!(
-                "NAVI visual laboratory / simulated events / passive overlay / automatic exit"
-            );
-            platform::run(options).map_err(|e| e.to_string())
+            println!("NAVI visual laboratory / simulated responses and events");
+            if options.experience {
+                experience::run(options).map_err(|e| e.to_string())
+            } else {
+                platform::run(options).map_err(|e| e.to_string())
+            }
         }
         Ok(None) => Ok(()),
         Err(e) => Err(e),
