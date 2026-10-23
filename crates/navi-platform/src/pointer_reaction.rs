@@ -42,7 +42,8 @@ pub(super) unsafe fn apply(app: &mut App, sample: CursorSample, now: u64) -> boo
     }
     let foreground = GetForegroundWindow();
     let mut rect = RECT::default();
-    let full = GetWindowRect(foreground, &mut rect).is_ok()
+    let full = !IsZoomed(foreground).as_bool()
+        && GetWindowRect(foreground, &mut rect).is_ok()
         && rect.left <= info.rcMonitor.left
         && rect.top <= info.rcMonitor.top
         && rect.right >= info.rcMonitor.right

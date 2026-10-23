@@ -235,13 +235,18 @@ impl SurfaceManager {
             } else {
                 (event.point.x, event.point.y)
             };
-            // Retain both endpoints across monitors on the virtual desktop.
+            // Enclose both absolute endpoints, growing in 128px tiles instead
+            // of allocating and copying every monitor for a short gesture.
             let (left, top, right, bottom) = if drag {
                 (
-                    event.work_area.left,
-                    event.work_area.top,
-                    event.work_area.right,
-                    event.work_area.bottom,
+                    ((origin.0.min(event.point.x) - margin).div_euclid(128) * 128)
+                        .max(event.work_area.left),
+                    ((origin.1.min(event.point.y) - margin).div_euclid(128) * 128)
+                        .max(event.work_area.top),
+                    ((origin.0.max(event.point.x) + margin + 127).div_euclid(128) * 128)
+                        .min(event.work_area.right),
+                    ((origin.1.max(event.point.y) + margin + 127).div_euclid(128) * 128)
+                        .min(event.work_area.bottom),
                 )
             } else {
                 let width = (70.0 * scale).round() as i32;
@@ -481,7 +486,6 @@ mod tests {
         };
         let origin = Point { x: -3750, y: -1000 };
         let mut manager = SurfaceManager::default();
-        let mut first_bounds = None;
         for (index, (point, dpi)) in [
             (Point { x: -3700, y: -950 }, 96),
             (Point { x: 7500, y: 2000 }, 192),
@@ -528,7 +532,8 @@ mod tests {
                 assert!(actual.0 >= 0.0 && actual.0 < plan.size.width);
                 assert!(actual.1 >= 0.0 && actual.1 < plan.size.height);
             }
-            assert_eq!(*first_bounds.get_or_insert(plan.bounds), plan.bounds);
+            assert!(plan.bounds.left >= desktop.left && plan.bounds.right <= desktop.right);
+            assert!(plan.bounds.top >= desktop.top && plan.bounds.bottom <= desktop.bottom);
         }
         assert!(manager.clear_focus_effect());
         assert!(manager.focus_effect_plan(500).is_none());

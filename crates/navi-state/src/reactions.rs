@@ -118,6 +118,16 @@ impl ReactionEngine {
         if event.own {
             return ReactionDecision::Unchanged;
         }
+        // Activating the dragged application's window must not replace the
+        // connector with a focus effect halfway through the same gesture.
+        if self.accepted_drag.is_some()
+            && self.active.iter().any(|r| matches!(
+                r.event.kind, DesktopKind::MouseDragStart | DesktopKind::MouseDragMove
+            ))
+        {
+            self.last_focus = Some(event.source);
+            return ReactionDecision::Unchanged;
+        }
         if !self.config.enabled || self.config.simultaneous == 0 || self.config.events & 1 == 0 {
             self.clear();
             return ReactionDecision::Cancel;

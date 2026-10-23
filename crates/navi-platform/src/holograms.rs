@@ -296,11 +296,10 @@ pub(super) unsafe fn sync(hwnd: HWND, app: &mut App) {
     if let Err(e) = result {
         app.overlay = None;
         app.effects.clear();
-        app.effects.enabled = 0;
-        app.action_visual.enabled = false;
         app.action_visual.clear();
-        app.reactions.set_enabled(false);
-        app.cursor = None;
+        // A transient allocation/draw failure must not disable every future
+        // reaction or unregister the mouse observer for the entire session.
+        app.reactions.clear();
         app.surfaces.clear_focus_effect();
         let _ = std::fs::write(
             std::env::temp_dir().join("navi-effects-error.log"),

@@ -100,6 +100,12 @@ impl CursorObserver {
         }
         let mut pid = 0;
         GetWindowThreadProcessId(target, Some(&mut pid));
+        // The layered connector spans the desktop. WindowFromPoint can return
+        // that passive HWND even though Windows passes mouse input through it.
+        let mut class = [0u16; 32];
+        let count = GetClassNameW(target, &mut class).max(0) as usize;
+        let decoration = pid == std::process::id()
+            && String::from_utf16_lossy(&class[..count]) == "NaviHolograms";
         let result = self.gesture.feed(
             PointerInput {
                 point: Point {
@@ -109,7 +115,7 @@ impl CursorObserver {
                 down: flags & down_flag != 0,
                 up: flags & up_flag != 0,
                 held: GetAsyncKeyState(key) < 0,
-                own: pid == std::process::id(),
+                own: pid == std::process::id() && !decoration,
                 source: target.0 as usize,
             },
             now,
