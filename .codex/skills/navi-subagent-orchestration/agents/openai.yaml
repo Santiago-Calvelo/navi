@@ -1,0 +1,4 @@
+interface:
+  display_name: "NAVI Subagent Orchestration"
+  short_description: "Coordina subagentes mediante documentos"
+  default_prompt: "Usá $navi-subagent-orchestration para dividir y coordinar este trabajo de NAVI mediante documentos."
