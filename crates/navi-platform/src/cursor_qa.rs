@@ -106,13 +106,14 @@ pub(super) unsafe fn verify(hwnd: HWND) -> Result<Vec<(&'static str, bool)>> {
     checks.push((
         "cursor_drag_growing_canvas_retains_origin",
         with_app(|a| {
-            a.overlay.is_some() && a.surfaces.focus_effect_plan(a.now()).is_some_and(|p| {
-                p.dpi == 96
-                    && p.bounds.left as f32 + p.points[0].0 == start.bounds.left as f32
-                    && p.bounds.top as f32 + p.points[0].1 == start.bounds.top as f32
-                    && p.bounds.left as f32 + p.points[1].0 == moved.point.x as f32
-                    && p.bounds.top as f32 + p.points[1].1 == moved.point.y as f32
-            })
+            a.overlay.is_some()
+                && a.surfaces.focus_effect_plan(a.now()).is_some_and(|p| {
+                    p.dpi == 96
+                        && p.bounds.left as f32 + p.points[0].0 == start.bounds.left as f32
+                        && p.bounds.top as f32 + p.points[0].1 == start.bounds.top as f32
+                        && p.bounds.left as f32 + p.points[1].0 == moved.point.x as f32
+                        && p.bounds.top as f32 + p.points[1].1 == moved.point.y as f32
+                })
         })
         .unwrap_or(false),
     ));

@@ -13,6 +13,14 @@ pub(super) fn apply(
     event: DesktopEvent,
     now: u64,
 ) -> bool {
+    // Returning focus after a reply must not interrupt its contextual readout.
+    if event.kind == navi_state::reactions::DesktopKind::WindowFocus
+        && effects
+            .frame(now)
+            .is_some_and(|frame| frame.mask & navi_state::holograms::CONTEXT != 0)
+    {
+        return false;
+    }
     engine.config.focus_family = navi_state::visual::Family::StackV2;
     match engine.decide(event, now) {
         ReactionDecision::Start(reaction) => {
@@ -263,7 +271,10 @@ mod tests {
         };
         assert!(apply(&mut engine, &mut surfaces, &mut effects, moved, 50));
         let moved_plan = surfaces.focus_effect_plan(51).unwrap();
-        assert_eq!(moved_plan.bounds.left as f32 + moved_plan.points[0].0 * 1.5, -1000.0);
+        assert_eq!(
+            moved_plan.bounds.left as f32 + moved_plan.points[0].0 * 1.5,
+            -1000.0
+        );
         assert_eq!(p.bounds.left as f32 + p.points[0].0 * 1.5, -1000.0);
         assert!(apply(
             &mut engine,

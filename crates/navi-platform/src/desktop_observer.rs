@@ -15,7 +15,9 @@ pub struct DesktopObserver {
 
 fn is_window_focus_event(event: u32, hwnd: HWND, object: i32, child: i32) -> bool {
     matches!(event, FOCUS_EVENT | EVENT_SYSTEM_MINIMIZEEND)
-        && hwnd.0 != 0 && object == 0 && child == 0
+        && hwnd.0 != 0
+        && object == 0
+        && child == 0
 }
 
 pub fn is_current_focus_message(event: u32, source: HWND, current: HWND) -> bool {
@@ -68,7 +70,9 @@ impl DesktopObserver {
             return Err(Error::from_win32());
         }
         SINK.store(sink.0, Ordering::Relaxed);
-        Ok(Self { hooks: vec![hook, restored] })
+        Ok(Self {
+            hooks: vec![hook, restored],
+        })
     }
 }
 impl Drop for DesktopObserver {

@@ -121,11 +121,13 @@ impl Overlay {
         }
         Ok(())
     }
-    pub unsafe fn draw(&self, frame: EffectFrame, bounds: Rect) -> Result<()> {
-        self.draw_scaled(frame, bounds, 1.0)
-    }
-
-    pub unsafe fn draw_scaled(&self, frame: EffectFrame, bounds: Rect, scale: f32) -> Result<()> {
+    pub unsafe fn draw_scaled(
+        &self,
+        frame: EffectFrame,
+        bounds: Rect,
+        scale: f32,
+        context: &[(String, String)],
+    ) -> Result<()> {
         SetWindowPos(
             self.hwnd,
             HWND_TOPMOST,
@@ -136,7 +138,7 @@ impl Overlay {
             SWP_NOACTIVATE,
         )?;
         self.renderer
-            .draw_holograms_scaled(self.hwnd, frame, scale)?;
+            .draw_holograms_scaled(self.hwnd, frame, scale, context)?;
         if !IsWindowVisible(self.hwnd).as_bool() {
             SetWindowPos(
                 self.hwnd,
@@ -272,7 +274,10 @@ pub(super) unsafe fn sync(hwnd: HWND, app: &mut App) {
                     .map(|v| (plan.draw_scale, v.rotation_radians)),
             )?;
         } else {
-            app.overlay.as_ref().unwrap().draw(frame, bounds)?;
+            app.overlay
+                .as_ref()
+                .unwrap()
+                .draw_scaled(frame, bounds, 1.0, &app.context_entries)?;
         }
         let remaining = if let Some((_, remaining)) = action {
             remaining
