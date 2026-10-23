@@ -48,7 +48,7 @@ impl ToolKind {
             Self::SystemStatus => ("system_status", "Consultar sistema y procesadores"),
             Self::OpenCalculator => (
                 "open_calculator",
-                "Solicitar el inicio de la calculadora de Windows",
+                "Iniciar la calculadora de Windows",
             ),
         };
         let launch = self == Self::OpenCalculator;
@@ -184,11 +184,10 @@ impl ToolRegistry {
             ToolKind::OpenCalculator => {
                 host.open_calculator()?;
                 Ok((
-                    "Solicité el inicio de la calculadora.".into(),
+                    "Iniciando calculadora.".into(),
                     vec![("aplicacion".into(), "calculadora".into())],
                 ))
             }
         }
     }
 }
-

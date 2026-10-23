@@ -133,8 +133,7 @@ pub(super) unsafe fn complete(hwnd: HWND) -> bool {
         if !was_hidden {
             a.surfaces.present(a.session.phase, a.now());
             a.effects.phase_changed(a.session.phase, a.now());
-            if response.tool.as_deref() == Some("open_calculator")
-                && matches!(response.status, Status::Success | Status::Error)
+            if matches!(response.status, Status::Success | Status::Error)
             {
                 a.surfaces.clear_focus_effect();
                 a.effects.clear();
