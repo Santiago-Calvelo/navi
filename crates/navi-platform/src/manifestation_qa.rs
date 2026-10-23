@@ -83,6 +83,7 @@ pub(super) unsafe fn verify(
             let style = VisualStyle {
                 intensity,
                 seed: 17,
+                temporal: None,
             };
             overlay.manifestation(frame, bounds, family, style, points)?;
             let (zero, partial, opaque) = overlay.renderer.alpha_stats();

@@ -4,8 +4,8 @@ pub mod context_fragment;
 mod cursor_effects;
 mod fractured_halo;
 pub mod holograms;
-pub mod layer_stack;
 mod layer_stack_v2;
+mod sutura;
 use navi_ui::ERROR;
 use navi_ui::*;
 use windows::{
@@ -275,7 +275,14 @@ impl Renderer {
             MUTED,
             &self.small,
         )?;
-        if matches!(s.phase, Phase::Listening | Phase::Processing) {
+        if s.keyboard_entry.is_some() {
+            self.text(
+                "esc / ocultar",
+                [219.0, h - 24.0, 308.0, h - 6.0],
+                MUTED,
+                &self.small,
+            )?;
+        } else if matches!(s.phase, Phase::Listening | Phase::Processing) {
             for i in 0..28 {
                 let x = 205.0 + i as f32 * 3.2;
                 let height = navi_demo::amplitude(i * 3, s.frame, true) * 0.24;
@@ -283,7 +290,11 @@ impl Renderer {
             }
         } else {
             self.text(
-                if s.phase == Phase::Responding {
+                if s.awaiting_confirmation {
+                    "confirmar"
+                } else if !s.answer.is_empty() {
+                    "04s"
+                } else if s.phase == Phase::Responding {
                     "04s / demo"
                 } else {
                     "F6 / demo"

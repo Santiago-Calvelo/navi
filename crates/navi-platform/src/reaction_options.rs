@@ -26,12 +26,6 @@ pub(super) unsafe fn append(menu: HMENU) {
         );
         item(
             menu,
-            52,
-            &format!("Foco: {:?} · cambiar familia", c.focus_family),
-            false,
-        );
-        item(
-            menu,
             53,
             &format!("Posición: {:?} · cambiar", a.surfaces.placement),
             false,
@@ -56,19 +50,11 @@ pub(super) unsafe fn append(menu: HMENU) {
         );
         item(
             menu,
-            57,
-            &format!("Clic: {:?} · cambiar familia", c.click_family),
-            false,
+            62,
+            "FracturedHalo · resultados de acciones",
+            a.action_visual.enabled,
         );
-        item(
-            menu,
-            58,
-            &format!("Arrastre: {:?} · cambiar familia", c.drag_family),
-            false,
-        );
-        item(menu, 59, "FracturedHalo · Ctrl+Alt+5", false);
-        item(menu, 60, "LayerStack v1 · Ctrl+Alt+6 · debug", false);
-        item(menu, 61, "FracturedHalo al invocar NAVI", a.invocation_halo);
+        item(menu, 63, "Sutura — diagnóstico visual", false);
     });
 }
 
@@ -101,11 +87,18 @@ pub(super) unsafe fn toggle_event(hwnd: HWND, bit: u8) {
 }
 
 pub(super) unsafe fn command(hwnd: HWND, id: u32) -> bool {
+    if matches!(id, 52 | 57..=61) {
+        return false;
+    }
     match id {
+        62 => commit(hwnd, |a| {
+            a.action_visual.enabled = !a.action_visual.enabled;
+            a.action_visual.clear();
+        }),
         55 => toggle_event(hwnd, 2),
         56 => toggle_event(hwnd, 4),
         59 => preview(hwnd, Family::FracturedHalo),
-        60 => preview(hwnd, Family::StackV1),
+        63 => preview(hwnd, Family::Sutura),
         51..=54 | 57..=58 | 61 => commit(hwnd, |a| {
             a.surfaces.clear_focus_effect();
             a.reactions.clear();
@@ -122,7 +115,7 @@ pub(super) unsafe fn command(hwnd: HWND, id: u32) -> bool {
                 52 => {
                     c.focus_family = match c.focus_family {
                         Family::StackV2 => Family::FracturedHalo,
-                        Family::FracturedHalo => Family::StackV1,
+                        Family::FracturedHalo => Family::StackV2,
                         _ => Family::StackV2,
                     }
                 }
@@ -141,11 +134,7 @@ pub(super) unsafe fn command(hwnd: HWND, id: u32) -> bool {
                     }
                 }
                 57 => {
-                    c.click_family = if c.click_family == Family::ClickPulse {
-                        Family::StackV1
-                    } else {
-                        Family::ClickPulse
-                    }
+                    c.click_family = Family::ClickPulse;
                 }
                 58 => {
                     c.drag_family = if c.drag_family == Family::DragConnector {
@@ -154,7 +143,6 @@ pub(super) unsafe fn command(hwnd: HWND, id: u32) -> bool {
                         Family::DragConnector
                     }
                 }
-                61 => a.invocation_halo = !a.invocation_halo,
                 _ => {}
             }
         }),
@@ -165,6 +153,9 @@ pub(super) unsafe fn command(hwnd: HWND, id: u32) -> bool {
 
 pub(super) unsafe fn preview(hwnd: HWND, family: Family) {
     commit(hwnd, |a| {
+        if matches!(family, Family::StackV2 | Family::Sutura) {
+            monitor_catalog::prepare(a);
+        }
         focus_reaction::cancel(&mut a.reactions, &mut a.surfaces);
         a.effects.clear();
         let work = a.work;
@@ -210,7 +201,12 @@ pub(super) unsafe fn preview(hwnd: HWND, family: Family) {
         a.surfaces.begin_focus_effect(Reaction {
             event,
             start: a.now(),
-            duration_ms: a.effects.duration_ms,
+            duration_ms: match family {
+                Family::StackV2 if a.effects.motion => 1200,
+                Family::StackV2 => 850,
+                Family::Sutura => 1800,
+                _ => a.effects.duration_ms,
+            },
             intensity: a.reactions.config.intensity,
             family,
         });

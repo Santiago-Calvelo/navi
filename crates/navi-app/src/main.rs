@@ -7,7 +7,13 @@ fn main() {
     } else {
         None
     };
-    let result = if args.get(1).is_some_and(|v| v == "--observer-probe") {
+    let result = if args.get(1).is_some_and(|v| v == "--input-check") {
+        navi_platform::input_check(
+            args.get(2)
+                .map(std::path::PathBuf::from)
+                .unwrap_or_else(|| "artifacts/input-check.json".into()),
+        )
+    } else if args.get(1).is_some_and(|v| v == "--observer-probe") {
         navi_platform::observer_probe(
             args.get(2)
                 .map(std::path::PathBuf::from)

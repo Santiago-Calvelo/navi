@@ -36,7 +36,6 @@ struct Press {
     origin: Point,
     source: usize,
     own: bool,
-    started: u64,
     last_move: u64,
     last_point: Point,
     dragging: bool,
@@ -71,7 +70,6 @@ impl CursorGesture {
                 origin: input.point,
                 source: input.source,
                 own: input.own,
-                started: now,
                 last_move: now,
                 last_point: input.point,
                 dragging: false,
@@ -104,7 +102,7 @@ impl CursorGesture {
                 CursorKind::Click
             }));
         }
-        if (!input.held && !input.down) || now.saturating_sub(press.started) >= MAX_GESTURE_MS {
+        if (!input.held && !input.down) || now.saturating_sub(press.last_move) >= MAX_GESTURE_MS {
             self.press = None;
             return (!press.own && press.dragging).then(|| sample(CursorKind::DragEnd));
         }
@@ -330,5 +328,28 @@ mod tests {
                 .kind,
             CursorKind::DragEnd
         );
+    }
+
+    #[test]
+    fn long_drag_keeps_physical_origin_across_negative_coordinates() {
+        let mut gesture = CursorGesture::new(4, 4);
+        gesture.feed(
+            PointerInput {
+                down: true,
+                ..input(-3800, -900)
+            },
+            0,
+        );
+        for (now, x, y) in [
+            (1, -3790, -890),
+            (30_000, 1500, 500),
+            (60_000, 8000, 2500),
+            (90_000, -8000, -3000),
+        ] {
+            let sample = gesture.feed(input(x, y), now).unwrap();
+            assert_eq!(sample.origin, Point { x: -3800, y: -900 });
+            assert_eq!(sample.point, Point { x, y });
+            assert!(gesture.pressed());
+        }
     }
 }

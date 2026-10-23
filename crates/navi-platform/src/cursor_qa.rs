@@ -67,6 +67,13 @@ pub(super) unsafe fn verify(hwnd: HWND) -> Result<Vec<(&'static str, bool)>> {
 
     let start = DesktopEvent {
         kind: DesktopKind::MouseDragStart,
+        dpi: 96,
+        work_area: Bounds {
+            left: GetSystemMetrics(SM_XVIRTUALSCREEN),
+            top: GetSystemMetrics(SM_YVIRTUALSCREEN),
+            right: GetSystemMetrics(SM_XVIRTUALSCREEN) + GetSystemMetrics(SM_CXVIRTUALSCREEN),
+            bottom: GetSystemMetrics(SM_YVIRTUALSCREEN) + GetSystemMetrics(SM_CYVIRTUALSCREEN),
+        },
         bounds: Bounds {
             left: click.point.x - 50,
             top: click.point.y - 20,
@@ -90,19 +97,25 @@ pub(super) unsafe fn verify(hwnd: HWND) -> Result<Vec<(&'static str, bool)>> {
     let moved = DesktopEvent {
         kind: DesktopKind::MouseDragMove,
         point: Point {
-            x: start.point.x + 30,
-            y: start.point.y + 10,
+            x: start.work_area.right - 20,
+            y: start.work_area.bottom - 20,
         },
         ..start
     };
     dispatch(hwnd, moved);
     checks.push((
-        "cursor_drag_fixed_viewport_reuses_native_resources",
+        "cursor_drag_desktop_canvas_reuses_resources_and_retains_origin",
         with_app(|a| {
             a.overlay.as_ref().is_some_and(|o| {
                 overlay.is_some_and(|(old, width, height, _)| {
                     old == o.hwnd && width == o.renderer.width && height == o.renderer.height
                 })
+            }) && a.surfaces.focus_effect_plan(a.now()).is_some_and(|p| {
+                p.dpi == 96
+                    && p.bounds.left as f32 + p.points[0].0 == start.bounds.left as f32
+                    && p.bounds.top as f32 + p.points[0].1 == start.bounds.top as f32
+                    && p.bounds.left as f32 + p.points[1].0 == moved.point.x as f32
+                    && p.bounds.top as f32 + p.points[1].1 == moved.point.y as f32
             })
         })
         .unwrap_or(false),

@@ -89,6 +89,7 @@ pub struct ReactionEngine {
     last_click: Option<u64>,
     last_drag: Option<u64>,
     accepted_drag: Option<usize>,
+    drag_updated: Option<u64>,
 }
 impl ReactionEngine {
     pub fn accept(&mut self, event: DesktopEvent, now: u64) -> bool {
@@ -144,7 +145,7 @@ impl ReactionEngine {
             start: now,
             duration_ms: 850,
             intensity: self.config.intensity,
-            family: self.config.focus_family,
+            family: Family::StackV2,
         };
         self.active.push(reaction);
         self.last_emitted = Some(now);
@@ -208,9 +209,9 @@ impl ReactionEngine {
             duration_ms: if click { 260 } else { 1500 },
             intensity: self.config.intensity,
             family: if click {
-                self.config.click_family
+                Family::ClickPulse
             } else {
-                self.config.drag_family
+                Family::DragConnector
             },
         };
         if !click && !updating {
@@ -223,13 +224,16 @@ impl ReactionEngine {
         } else if !updating {
             self.last_drag = Some(now);
         }
+        if !click {
+            self.drag_updated = Some(now);
+        }
         self.emitted += 1;
         ReactionDecision::Start(reaction)
     }
 
     pub fn prune(&mut self, now: u64) {
         if self
-            .last_drag
+            .drag_updated
             .is_some_and(|t| now.saturating_sub(t) >= 60_000)
         {
             self.accepted_drag = None;
@@ -254,6 +258,7 @@ impl ReactionEngine {
         self.last_click = None;
         self.last_drag = None;
         self.accepted_drag = None;
+        self.drag_updated = None;
     }
 }
 #[cfg(test)]
@@ -412,12 +417,30 @@ mod tests {
         assert!(e.active.is_empty());
     }
     #[test]
-    fn configured_event_family_and_default_experimental_intensity() {
+    fn obsolete_family_configuration_cannot_change_event_roles() {
         let mut e = ReactionEngine::default();
         e.config.focus_family = Family::FracturedHalo;
         assert!(e.accept(event(1), 0));
-        assert_eq!(e.active[0].family, Family::FracturedHalo);
+        assert_eq!(e.active[0].family, Family::StackV2);
         assert_eq!(e.active[0].intensity, Intensity::Experimental);
+        e.clear();
+        e.config.click_family = Family::Sutura;
+        assert!(e.accept(pointer(DesktopKind::MouseClick, 1), 1000));
+        assert_eq!(e.active[0].family, Family::ClickPulse);
+        e.config.drag_family = Family::StackV2;
+        assert!(e.accept(pointer(DesktopKind::MouseDragStart, 1), 2000));
+        assert_eq!(e.active[0].family, Family::DragConnector);
+    }
+
+    #[test]
+    fn continuous_drag_does_not_expire_at_sixty_seconds() {
+        let mut e = ReactionEngine::default();
+        assert!(e.accept(pointer(DesktopKind::MouseDragStart, 1), 0));
+        for now in [30_000, 60_000, 90_000, 120_000] {
+            assert!(e.accept(pointer(DesktopKind::MouseDragMove, 1), now));
+        }
+        e.prune(180_000);
+        assert!(!e.accept(pointer(DesktopKind::MouseDragMove, 1), 180_001));
     }
     #[test]
     fn disabled_drag_event_cannot_cancel_an_unrelated_focus_manifestation() {

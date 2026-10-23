@@ -57,6 +57,18 @@ pub fn hit(x: f32, y: f32) -> Hit {
 }
 
 pub fn headline(s: &Session) -> &str {
+    if let Some(entry) = s.keyboard_entry.filter(|_| s.input.is_empty()) {
+        return if entry.prompting() {
+            "¿Qué necesitás?"
+        } else if entry.caret_visible() {
+            "_"
+        } else {
+            ""
+        };
+    }
+    if !s.answer.is_empty() && !s.executing && s.input.is_empty() {
+        return &s.answer;
+    }
     match s.phase {
         Phase::Idle => "En reposo.",
         Phase::Invoked if !s.input.is_empty() => &s.input,
@@ -69,6 +81,12 @@ pub fn headline(s: &Session) -> &str {
 }
 
 pub fn caption(s: &Session) -> &str {
+    if s.executing {
+        return "Procesando una solicitud local.";
+    }
+    if !s.answer.is_empty() && !s.executing {
+        return &s.answer;
+    }
     match s.phase {
         Phase::Idle => "Alt + Espacio para conversar.",
         Phase::Invoked if s.mode == Mode::Text => {
@@ -148,17 +166,27 @@ pub fn surface_hit(kind: SurfaceKind, size: SurfaceSize, x: f32, y: f32) -> Hit 
     match kind {
         SurfaceKind::Console => hit(x, y),
         SurfaceKind::Beacon => Hit::Invoke,
-        SurfaceKind::Compact => {
-            if y > size.height - 28.0 && x < 130.0 {
-                Hit::Demo
-            } else {
-                Hit::Input
-            }
-        }
+        SurfaceKind::Compact => Hit::Input,
     }
 }
 
 pub fn compact_status(s: &Session) -> &str {
+    if s.keyboard_entry.is_some() {
+        return "escribí / enter";
+    }
+    if s.executing {
+        return "procesando solicitud";
+    }
+    if s.awaiting_confirmation {
+        return "confirmación pendiente";
+    }
+    if !s.answer.is_empty() {
+        return if s.input.is_empty() {
+            "respuesta local"
+        } else {
+            "respuesta lista / borrador"
+        };
+    }
     match s.phase {
         Phase::Idle => "en reposo",
         Phase::Invoked => "escribí / enter",
@@ -166,5 +194,26 @@ pub fn compact_status(s: &Session) -> &str {
         Phase::Processing => "procesando",
         Phase::Responding => "respuesta local",
         Phase::Error => "F1 · reintentar",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use navi_state::Event;
+
+    #[test]
+    fn compact_keyboard_readiness_replaces_prompt_without_fake_audio() {
+        let mut session = Session::default();
+        session.apply(Event::KeyboardInvoke(50));
+        assert_eq!(headline(&session), "¿Qué necesitás?");
+        session.apply(Event::KeyboardTick(2_050));
+        assert_eq!(headline(&session), "_");
+        session.apply(Event::KeyboardTick(2_550));
+        assert_eq!(headline(&session), "");
+        assert_eq!(surface_size(SurfaceKind::Compact, &session).height, 104.0);
+        session.apply(Event::Character('h'));
+        assert_eq!(headline(&session), "h");
+        assert_eq!(compact_status(&session), "escribí / enter");
     }
 }

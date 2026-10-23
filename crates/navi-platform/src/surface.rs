@@ -1,6 +1,6 @@
 //! Surface policy only: no renderer, HWND, COM or Windows calls.
 use navi_state::reactions::{DesktopKind, Reaction};
-use navi_state::visual::{Family, Placement, VisualStyle};
+use navi_state::visual::{Family, Placement, ResolvedVariation, VisualStyle};
 use navi_state::{Phase, Session};
 use navi_ui::{surface_size, SurfaceKind, SurfaceSize};
 
@@ -42,6 +42,9 @@ pub struct FocusEffectPlan {
     pub style: VisualStyle,
     pub points: [(f32, f32); 2],
     pub drag: bool,
+    pub variation: Option<ResolvedVariation>,
+    pub draw_scale: f32,
+    pub motion: bool,
 }
 
 pub struct SurfaceManager {
@@ -50,9 +53,16 @@ pub struct SurfaceManager {
     pub anchor: SurfaceAnchor,
     pub console_position: Option<(i32, i32)>,
     pub effect_anchor: SurfaceAnchor,
+    pub avoid: Option<Rect>,
     focus_effect: Option<Reaction>,
     pub placement: Placement,
     pub seed: Option<u64>,
+    pub(crate) monitors: Vec<crate::organic::MonitorArea>,
+    pub(crate) exclusions: [Option<navi_state::reactions::Bounds>; 3],
+    pub(crate) effect_motion: bool,
+    pub(crate) session_seed: u64,
+    organic: crate::organic::OrganicPlanner,
+    resolved: Option<crate::organic::ResolvedManifestation>,
     deadline: Option<u64>,
     phase: Phase,
     protected: bool,
@@ -66,9 +76,16 @@ impl Default for SurfaceManager {
             anchor: SurfaceAnchor::WorkArea,
             console_position: None,
             effect_anchor: SurfaceAnchor::WorkArea,
+            avoid: None,
             focus_effect: None,
             placement: Placement::WindowAnchor,
             seed: None,
+            monitors: Vec::new(),
+            exclusions: [None; 3],
+            effect_motion: true,
+            session_seed: 0,
+            organic: Default::default(),
+            resolved: None,
             deadline: None,
             phase: Phase::Idle,
             protected: false,
@@ -77,9 +94,36 @@ impl Default for SurfaceManager {
 }
 
 impl SurfaceManager {
-    pub fn begin_focus_effect(&mut self, reaction: Reaction) -> bool {
+    pub fn action_bounds(&self, work: Rect, dpi: u32) -> (Rect, SurfaceSize) {
+        let scale = dpi.max(1) as f32 / 96.0;
+        let margin = (20.0 * scale) as i32;
+        let width = ((work.right - work.left) as f32 * 0.30)
+            .min(620.0 * scale)
+            .min((work.bottom - work.top) as f32 * 0.65 * 1.8)
+            .max(1.0);
+        let height = (width / 1.8).max(1.0);
+        let right = (work.right - margin).max(work.left + width as i32);
+        let top = (work.top + margin).min(work.bottom - height as i32);
+        (
+            Rect {
+                left: right - width as i32,
+                top,
+                right,
+                bottom: top + height as i32,
+            },
+            SurfaceSize {
+                width: width / scale,
+                height: height / scale,
+            },
+        )
+    }
+
+    pub fn begin_focus_effect(&mut self, mut reaction: Reaction) -> bool {
         let event = reaction.event;
-        let valid = event.dpi > 0
+        let valid = !event.own
+            && !event.suppressed
+            && reaction.duration_ms > 0
+            && event.dpi > 0
             && event.work_area.right > event.work_area.left
             && event.work_area.bottom > event.work_area.top
             && (event.kind != DesktopKind::WindowFocus
@@ -87,11 +131,42 @@ impl SurfaceManager {
                     > event.bounds.left.max(event.work_area.left)
                     && event.bounds.bottom.min(event.work_area.bottom)
                         > event.bounds.top.max(event.work_area.top)));
-        self.focus_effect = valid.then_some(reaction);
-        valid
+        self.resolved = None;
+        self.focus_effect = None;
+        if !valid {
+            return false;
+        }
+        if event.kind == DesktopKind::WindowFocus
+            && matches!(reaction.family, Family::StackV2 | Family::Sutura)
+            && !self.monitors.is_empty()
+        {
+            // Existing cursor families and fallback diagnostics keep their timing.
+            reaction.duration_ms = match reaction.family {
+                Family::StackV2 if self.effect_motion => 1200,
+                Family::Sutura => 1800,
+                _ => reaction.duration_ms,
+            };
+            self.resolved = self.organic.resolve(
+                reaction,
+                &self.monitors,
+                &self.exclusions,
+                self.seed.unwrap_or(self.session_seed),
+                self.effect_motion,
+                self.placement,
+            );
+            self.focus_effect = self.resolved.map(|plan| plan.reaction);
+        } else {
+            self.focus_effect = Some(reaction);
+        }
+        self.focus_effect.is_some()
+    }
+
+    pub fn focus_duration(&self) -> Option<u64> {
+        self.focus_effect.map(|r| r.duration_ms)
     }
 
     pub fn clear_focus_effect(&mut self) -> bool {
+        self.resolved = None;
         self.focus_effect.take().is_some()
     }
 
@@ -100,7 +175,7 @@ impl SurfaceManager {
             .focus_effect
             .is_some_and(|r| now.saturating_sub(r.start) >= r.duration_ms)
         {
-            self.focus_effect = None;
+            self.clear_focus_effect();
         }
     }
 
@@ -109,6 +184,36 @@ impl SurfaceManager {
         let elapsed = now.saturating_sub(reaction.start);
         if elapsed >= reaction.duration_ms {
             return None;
+        }
+        if let Some(plan) = self.resolved {
+            let b = plan.viewport;
+            let scale = plan.dpi as f32 / 96.0;
+            return Some(FocusEffectPlan {
+                bounds: Rect {
+                    left: b.left,
+                    top: b.top,
+                    right: b.right,
+                    bottom: b.bottom,
+                },
+                dpi: plan.dpi,
+                size: SurfaceSize {
+                    width: (b.right - b.left) as f32 / scale,
+                    height: (b.bottom - b.top) as f32 / scale,
+                },
+                progress: elapsed as f32 / reaction.duration_ms as f32,
+                remaining_ms: reaction.duration_ms.saturating_sub(elapsed).max(1) as u32,
+                family: reaction.family,
+                style: VisualStyle {
+                    intensity: reaction.intensity,
+                    seed: plan.variation.seed,
+                    temporal: Some(plan.variation.temporal),
+                },
+                points: [(0.0, 0.0); 2],
+                drag: false,
+                variation: Some(plan.variation),
+                draw_scale: plan.draw_scale,
+                motion: plan.motion,
+            });
         }
         let event = reaction.event;
         let scale = event.dpi as f32 / 96.0;
@@ -130,19 +235,14 @@ impl SurfaceManager {
             } else {
                 (event.point.x, event.point.y)
             };
-            // A fixed bounded drag viewport reuses the D2D target and DIB for
-            // every move. Long connectors are clipped instead of allocating a
-            // monitor-sized bitmap or rebuilding fonts 30 times per second.
+            // Retain both endpoints across monitors on the virtual desktop.
             let (left, top, right, bottom) = if drag {
-                let width = (640.0 * scale) as i32;
-                let height = (360.0 * scale) as i32;
-                let width = width.min(event.work_area.right - event.work_area.left);
-                let height = height.min(event.work_area.bottom - event.work_area.top);
-                let left = (event.point.x - width / 2)
-                    .clamp(event.work_area.left, event.work_area.right - width);
-                let top = (event.point.y - height / 2)
-                    .clamp(event.work_area.top, event.work_area.bottom - height);
-                (left, top, left + width, top + height)
+                (
+                    event.work_area.left,
+                    event.work_area.top,
+                    event.work_area.right,
+                    event.work_area.bottom,
+                )
             } else {
                 let width = (70.0 * scale).round() as i32;
                 let width = width.min(event.work_area.right - event.work_area.left);
@@ -207,6 +307,7 @@ impl SurfaceManager {
             style: VisualStyle {
                 intensity: reaction.intensity,
                 seed,
+                temporal: None,
             },
             points,
             dpi: event.dpi,
@@ -216,6 +317,9 @@ impl SurfaceManager {
             },
             progress: elapsed as f32 / reaction.duration_ms as f32,
             remaining_ms: reaction.duration_ms.saturating_sub(elapsed).max(1) as u32,
+            variation: None,
+            draw_scale: 1.0,
+            motion: true,
         })
     }
 
@@ -258,7 +362,7 @@ impl SurfaceManager {
             self.visible = true;
         }
         if changed {
-            self.deadline = if phase == Phase::Responding
+            self.deadline = if matches!(phase, Phase::Responding | Phase::Error)
                 && self.kind != SurfaceKind::Console
                 && !self.protected
             {
@@ -281,7 +385,8 @@ impl SurfaceManager {
     }
 
     pub fn protect(&mut self, session: &Session) {
-        self.protected = !session.input.trim().is_empty() || session.animated();
+        self.protected =
+            !session.input.trim().is_empty() || session.animated() || session.awaiting_confirmation;
         if self.protected {
             self.deadline = None;
         }
@@ -295,7 +400,7 @@ impl SurfaceManager {
         };
         self.visible = true;
         self.deadline = if self.kind == SurfaceKind::Compact
-            && self.phase == Phase::Responding
+            && matches!(self.phase, Phase::Responding | Phase::Error)
             && !self.protected
         {
             Some(now + RESPONSE_MS)
@@ -335,7 +440,19 @@ impl SurfaceManager {
             SurfaceAnchor::ContextRect(rect) => (rect.right - width, rect.bottom + margin),
         };
         let x = x.clamp(work.left, (work.right - width).max(work.left));
-        let y = y.clamp(work.top, (work.bottom - height).max(work.top));
+        let mut y = y.clamp(work.top, (work.bottom - height).max(work.top));
+        if self.kind == SurfaceKind::Compact {
+            if let Some(avoid) = self
+                .avoid
+                .filter(|r| x < r.right && x + width > r.left && y < r.bottom && y + height > r.top)
+            {
+                if avoid.top - height - margin >= work.top {
+                    y = avoid.top - height - margin;
+                } else if avoid.bottom + margin + height <= work.bottom {
+                    y = avoid.bottom + margin;
+                }
+            }
+        }
         SurfacePlan {
             bounds: Rect {
                 left: x,
@@ -353,6 +470,70 @@ impl SurfaceManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn drag_canvas_keeps_both_physical_anchors_across_monitors_and_dpi() {
+        use navi_state::reactions::{Bounds, DesktopEvent, Intensity, Point};
+        let desktop = Bounds {
+            left: -3840,
+            top: -1080,
+            right: 7680,
+            bottom: 2160,
+        };
+        let origin = Point { x: -3750, y: -1000 };
+        let mut manager = SurfaceManager::default();
+        let mut first_bounds = None;
+        for (index, (point, dpi)) in [
+            (Point { x: -3700, y: -950 }, 96),
+            (Point { x: 7500, y: 2000 }, 192),
+            (Point { x: -3800, y: 2000 }, 144),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let reaction = Reaction {
+                event: DesktopEvent {
+                    kind: if index == 0 {
+                        DesktopKind::MouseDragStart
+                    } else {
+                        DesktopKind::MouseDragMove
+                    },
+                    source: 1,
+                    bounds: Bounds {
+                        left: origin.x,
+                        top: origin.y,
+                        right: point.x,
+                        bottom: point.y,
+                    },
+                    point,
+                    work_area: desktop,
+                    own: false,
+                    suppressed: false,
+                    dpi,
+                },
+                start: index as u64 * 100,
+                duration_ms: 1500,
+                intensity: Intensity::Experimental,
+                family: Family::DragConnector,
+            };
+            assert!(manager.begin_focus_effect(reaction));
+            let plan = manager.focus_effect_plan(reaction.start).unwrap();
+            let scale = dpi as f32 / 96.0;
+            for (actual, expected) in plan.points.into_iter().zip([origin, point]) {
+                assert!(
+                    (plan.bounds.left as f32 + actual.0 * scale - expected.x as f32).abs() < 0.01
+                );
+                assert!(
+                    (plan.bounds.top as f32 + actual.1 * scale - expected.y as f32).abs() < 0.01
+                );
+                assert!(actual.0 >= 0.0 && actual.0 < plan.size.width);
+                assert!(actual.1 >= 0.0 && actual.1 < plan.size.height);
+            }
+            assert_eq!(*first_bounds.get_or_insert(plan.bounds), plan.bounds);
+        }
+        assert!(manager.clear_focus_effect());
+        assert!(manager.focus_effect_plan(500).is_none());
+    }
+
     fn work() -> Rect {
         Rect {
             left: -1920,
@@ -399,6 +580,24 @@ mod tests {
         assert!(manager.visible);
     }
     #[test]
+    fn error_result_expires_unless_a_draft_protects_it() {
+        let mut manager = SurfaceManager::default();
+        let mut session = Session {
+            phase: Phase::Error,
+            ..Default::default()
+        };
+        manager.protect(&session);
+        manager.present(session.phase, 10);
+        assert!(!manager.expire(4009));
+        assert!(manager.expire(4010));
+        session.input = "conservar".into();
+        manager.protect(&session);
+        manager.present(session.phase, 5000);
+        assert!(!manager.expire(20000));
+        assert_eq!(manager.kind, SurfaceKind::Compact);
+    }
+
+    #[test]
     fn layout_follows_negative_monitor_work_area_and_grows_upward() {
         let mut manager = SurfaceManager::default();
         let mut s = Session {
@@ -432,5 +631,52 @@ mod tests {
         let plan = manager.plan(work(), 96, &Session::default());
         assert!(plan.bounds.right <= 0);
         assert!(plan.bounds.bottom <= 1040);
+    }
+    #[test]
+    fn confirmation_stays_visible_without_an_animation_or_auto_close_timer() {
+        let mut manager = SurfaceManager::default();
+        let mut session = Session::default();
+        session.apply(navi_state::Event::CompleteRequest {
+            text: "confirmar 1".into(),
+            confirmation: true,
+            failed: false,
+        });
+        manager.protect(&session);
+        manager.present(session.phase, 0);
+        assert!(manager.remaining(10000).is_none());
+        assert!(!manager.expire(10000));
+        assert!(!session.animated());
+        session.apply(navi_state::Event::CompleteRequest {
+            text: "cancelada".into(),
+            confirmation: false,
+            failed: false,
+        });
+        manager.protect(&session);
+        manager.present(Phase::Processing, 10000);
+        manager.present(session.phase, 10000);
+        assert!(manager.expire(14000));
+        assert_eq!(manager.kind, SurfaceKind::Beacon);
+    }
+
+    #[test]
+    fn response_avoids_user_panel_and_action_bounds_stay_in_work_area() {
+        let mut manager = SurfaceManager::default();
+        manager.present(Phase::Responding, 0);
+        let original = manager.plan(work(), 96, &Session::default()).bounds;
+        manager.avoid = Some(Rect {
+            left: original.left,
+            top: original.top - 100,
+            right: original.right,
+            bottom: original.bottom,
+        });
+        let shifted = manager.plan(work(), 96, &Session::default()).bounds;
+        assert!(shifted.bottom < manager.avoid.unwrap().top);
+        assert!(shifted.top >= work().top);
+        for dpi in [96, 144, 192] {
+            let (bounds, size) = manager.action_bounds(work(), dpi);
+            assert!(bounds.left >= work().left && bounds.right <= work().right);
+            assert!(bounds.top >= work().top && bounds.bottom <= work().bottom);
+            assert!(size.width > 0.0 && size.height > 0.0);
+        }
     }
 }

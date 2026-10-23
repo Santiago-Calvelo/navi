@@ -56,25 +56,40 @@ pub(super) unsafe fn apply(app: &mut App, sample: CursorSample, now: u64) -> boo
     let mut dx = 96;
     let mut dy = 96;
     let _ = GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &mut dx, &mut dy);
+    let drag = matches!(sample.kind, CursorKind::DragStart | CursorKind::DragMove);
+    // Raw Input coordinates are physical desktop pixels. Keep one stable
+    // canvas across monitor/DPI boundaries for the whole connector.
+    let work_area = if drag {
+        let left = GetSystemMetrics(SM_XVIRTUALSCREEN);
+        let top = GetSystemMetrics(SM_YVIRTUALSCREEN);
+        Bounds {
+            left,
+            top,
+            right: left + GetSystemMetrics(SM_CXVIRTUALSCREEN),
+            bottom: top + GetSystemMetrics(SM_CYVIRTUALSCREEN),
+        }
+    } else {
+        Bounds {
+            left: info.rcWork.left,
+            top: info.rcWork.top,
+            right: info.rcWork.right,
+            bottom: info.rcWork.bottom,
+        }
+    };
     let event = DesktopEvent {
         kind,
         source: sample.source,
         point: sample.point,
         own: false,
         suppressed: full || blocked,
-        dpi: dx.max(96),
+        dpi: if drag { 96 } else { dx.max(96) },
         bounds: Bounds {
             left: sample.origin.x,
             top: sample.origin.y,
             right: sample.point.x,
             bottom: sample.point.y,
         },
-        work_area: Bounds {
-            left: info.rcWork.left,
-            top: info.rcWork.top,
-            right: info.rcWork.right,
-            bottom: info.rcWork.bottom,
-        },
+        work_area,
     };
     focus_reaction::apply(
         &mut app.reactions,

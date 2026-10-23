@@ -116,7 +116,14 @@ impl FracturedHalo {
         let bright = r.brush((color, alpha * 0.91))?;
         let middle = r.brush((color, alpha * 0.51))?;
         let dim = r.brush((color, alpha * 0.21))?;
-        let fill = r.brush((0x507c72, alpha * 0.11))?;
+        let fill = r.brush((
+            if frame.phase == Phase::Error {
+                ERROR.0
+            } else {
+                0x507c72
+            },
+            alpha * 0.11,
+        ))?;
         let factory = r.target.GetFactory()?;
 
         // Incomplete oblique bands with unrelated gaps. There are deliberately

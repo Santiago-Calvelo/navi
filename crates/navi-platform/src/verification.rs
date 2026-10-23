@@ -490,7 +490,10 @@ pub(super) unsafe fn verify(
     snapshot(&path.with_file_name("compact-error.bmp"))?;
     checks.push((
         "error_is_quiet_after_interference",
-        with_app(|a| a.session.phase == Phase::Error && a.timers == [false; 4]).unwrap_or(false),
+        with_app(|a| {
+            a.session.phase == Phase::Error && !a.timers[0] && !a.timers[2] && !a.timers[3]
+        })
+        .unwrap_or(false),
     ));
     SendMessageW(hwnd, WM_KEYDOWN, WPARAM(0x70), LPARAM(0));
     checks.push((
@@ -669,6 +672,8 @@ pub(super) unsafe fn verify(
     verify_focus_integration(hwnd, &mut checks)?;
     checks.extend(manifestation_qa::verify(hwnd, path)?);
     checks.extend(cursor_qa::verify(hwnd)?);
+    verify_text_integration(hwnd, path, &mut checks)?;
+    verify_user_panel(hwnd, path, &mut checks)?;
     for dpi in [96, 120, 144, 192] {
         let session = Session {
             phase: Phase::Invoked,
@@ -696,5 +701,325 @@ pub(super) unsafe fn verify(
             "Native compact verification failed; inspect JSON",
         ));
     }
+    Ok(())
+}
+
+pub(super) unsafe fn input_only(hwnd: HWND, path: &Path) -> Result<()> {
+    let mut checks = Vec::new();
+    verify_user_panel(hwnd, path, &mut checks)?;
+    let pass = checks.iter().all(|(_, ok)| *ok);
+    let rows = checks
+        .iter()
+        .map(|(name, ok)| format!("\"{name}\":{ok}"))
+        .collect::<Vec<_>>()
+        .join(",");
+    std::fs::write(
+        path,
+        format!("{{\"all_passed\":{pass},\"checks\":{{{rows}}}}}"),
+    )
+    .map_err(|e| Error::new(E_FAIL, e.to_string()))?;
+    if pass {
+        Ok(())
+    } else {
+        Err(Error::new(E_FAIL, "Compact input verification failed"))
+    }
+}
+
+/// Own compact window and synthetic result playback; never starts calculator.
+unsafe fn verify_user_panel(hwnd: HWND, path: &Path, checks: &mut Vec<(&str, bool)>) -> Result<()> {
+    let demo = with_app(|a| {
+        let demo = a.demo_submission;
+        a.demo_submission = false;
+        demo
+    })
+    .unwrap_or(true);
+    SendMessageW(hwnd, WM_HOTKEY, WPARAM(1), LPARAM(0));
+    pump(Duration::from_millis(120));
+    checks.push((
+        "compact_keyboard_input_has_focus",
+        GetForegroundWindow() == hwnd
+            && with_app(|a| {
+                a.surfaces.kind == SurfaceKind::Compact && a.session.keyboard_entry.is_some()
+            })
+            .unwrap_or(false),
+    ));
+    pump(Duration::from_millis(2150));
+    checks.push((
+        "compact_prompt_changes_to_caret_without_audio",
+        with_app(|a| {
+            a.session.keyboard_entry.is_some_and(|e| !e.prompting())
+                && a.session.phase == Phase::Invoked
+                && !a.timers[0]
+        })
+        .unwrap_or(false),
+    ));
+    for c in "borrador sin enviar".encode_utf16() {
+        SendMessageW(hwnd, WM_CHAR, WPARAM(c as usize), LPARAM(0));
+    }
+    SendMessageW(hwnd, WM_KEYDOWN, WPARAM(VK_ESCAPE.0 as usize), LPARAM(0));
+    checks.push((
+        "compact_escape_keeps_process_and_beacon",
+        IsWindowVisible(hwnd).as_bool()
+            && with_app(|a| a.surfaces.kind == SurfaceKind::Beacon).unwrap_or(false),
+    ));
+    SendMessageW(hwnd, WM_HOTKEY, WPARAM(1), LPARAM(0));
+    checks.push((
+        "compact_preserves_draft_on_reopen",
+        with_app(|a| a.session.input == "borrador sin enviar").unwrap_or(false),
+    ));
+    with_app(|a| a.session.input = "hora".into());
+    SendMessageW(hwnd, WM_CHAR, WPARAM(13), LPARAM(0));
+    let start = Instant::now();
+    while with_app(|a| a.session.executing).unwrap_or(false)
+        && start.elapsed() < Duration::from_secs(3)
+    {
+        pump(Duration::from_millis(10));
+    }
+    checks.push((
+        "compact_enter_routes_to_real_clock",
+        with_app(|a| {
+            a.text
+                .latest
+                .as_ref()
+                .is_some_and(|r| r.tool.as_deref() == Some("current_time"))
+                && a.session.input.is_empty()
+        })
+        .unwrap_or(false),
+    ));
+    let foreground = GetForegroundWindow();
+    commit(hwnd, |a| {
+        a.effects.clear();
+        a.surfaces.clear_focus_effect();
+        a.action_visual.enabled = true;
+        a.action_visual.start(a.now(), false);
+        a.action_surface = action_surface::focused()
+            .map(|(work, dpi)| a.surfaces.result_surface(work, dpi, a.action_visual.seed));
+    });
+    pump(Duration::from_millis(300));
+    checks.push((
+        "action_projection_is_transparent_passive_and_drawn",
+        with_app(|a| {
+            a.overlay.as_ref().is_some_and(|o| {
+                let (zero, partial, _) = o.renderer.alpha_stats();
+                let style = GetWindowLongPtrW(o.hwnd, GWL_EXSTYLE) as u32;
+                zero > 0
+                    && partial > 0
+                    && style & (WS_EX_TRANSPARENT.0 | WS_EX_NOACTIVATE.0)
+                        == (WS_EX_TRANSPARENT.0 | WS_EX_NOACTIVATE.0)
+            })
+        })
+        .unwrap_or(false)
+            && GetForegroundWindow() == foreground,
+    ));
+    if let Some(result) = with_app(|a| {
+        a.overlay.as_ref().map(|o| {
+            o.renderer
+                .snapshot(&path.with_file_name("action-projection.bmp"))
+        })
+    })
+    .flatten()
+    {
+        result.map_err(|e| Error::new(E_FAIL, e.to_string()))?;
+    }
+    pump(Duration::from_millis(1650));
+    checks.push((
+        "action_projection_releases_resources_after_deadline",
+        with_app(|a| a.overlay.is_none() && !a.timers[3]).unwrap_or(false),
+    ));
+    reaction_options::command(hwnd, 62);
+    commit(hwnd, |a| a.action_visual.start(a.now(), false));
+    checks.push((
+        "action_projection_disabled_leaves_text_functional",
+        with_app(|a| {
+            a.overlay.is_none()
+                && !a.action_visual.enabled
+                && a.session.answer.starts_with("Son las ")
+        })
+        .unwrap_or(false),
+    ));
+    hide(hwnd);
+    commit(hwnd, |a| {
+        a.demo_submission = demo;
+        a.action_visual.enabled = true;
+    });
+    Ok(())
+}
+
+/// Real worker/message/Win32 loop, read-only tools and unconfirmed actions only.
+/// Never launches calculator or controls another application's input.
+unsafe fn verify_text_integration(
+    hwnd: HWND,
+    path: &Path,
+    checks: &mut Vec<(&str, bool)>,
+) -> Result<()> {
+    use navi_agent::{model::Status, Agent};
+    let foreground = GetForegroundWindow();
+    let demo = with_app(|a| {
+        let demo = a.demo_submission;
+        a.demo_submission = false;
+        a.text = text_backend::TextBackend::strict_for_diagnostics();
+        a.session.apply(Event::Reset);
+        a.surfaces.idle();
+        a.surfaces.kind = SurfaceKind::Compact;
+        demo
+    })
+    .ok_or_else(|| Error::new(E_FAIL, "Missing text verification App"))?;
+
+    unsafe fn type_and_send(hwnd: HWND, text: &str) {
+        for unit in text.encode_utf16() {
+            SendMessageW(hwnd, WM_CHAR, WPARAM(unit as usize), LPARAM(0));
+        }
+        SendMessageW(hwnd, WM_CHAR, WPARAM(13), LPARAM(0));
+    }
+    unsafe fn wait() {
+        let start = Instant::now();
+        while with_app(|a| a.session.executing).unwrap_or(false)
+            && start.elapsed() < Duration::from_secs(3)
+        {
+            pump(Duration::from_millis(10));
+        }
+    }
+
+    type_and_send(hwnd, "qué hora es");
+    checks.push((
+        "text_submit_enters_real_processing",
+        with_app(|a| a.session.executing && a.session.phase == Phase::Processing).unwrap_or(false),
+    ));
+    wait();
+    checks.push((
+        "text_real_clock_completes_through_ui_message",
+        with_app(|a| {
+            a.text.latest.as_ref().is_some_and(|r| {
+                r.status == Status::Success && r.tool.as_deref() == Some("current_time")
+            }) && a.session.answer.starts_with("Son las ")
+                && !a.session.executing
+                && a.session.phase == Phase::Responding
+                && !a.timers[0]
+        })
+        .unwrap_or(false),
+    ));
+    snapshot(&path.with_file_name("text-clock.bmp"))?;
+
+    type_and_send(hwnd, "abrí la calculadora");
+    wait();
+    checks.push((
+        "text_calculator_requires_confirmation_and_stays_quiet",
+        with_app(|a| {
+            a.text
+                .latest
+                .as_ref()
+                .is_some_and(|r| r.status == Status::NeedsConfirmation && r.confirmation.is_some())
+                && a.session.awaiting_confirmation
+                && !a.session.animated()
+                && a.surfaces.remaining(a.now()).is_none()
+                && !a.timers[0]
+                && !a.timers[1]
+        })
+        .unwrap_or(false),
+    ));
+    snapshot(&path.with_file_name("text-confirmation.bmp"))?;
+
+    type_and_send(hwnd, "cancelar");
+    wait();
+    checks.push((
+        "text_cancel_does_not_launch_a_tool",
+        with_app(|a| {
+            a.text
+                .latest
+                .as_ref()
+                .is_some_and(|r| r.status == Status::Cancelled && r.timings.execution.is_zero())
+                && !a.session.awaiting_confirmation
+        })
+        .unwrap_or(false),
+    ));
+
+    type_and_send(hwnd, "ejecutá powershell");
+    wait();
+    checks.push((
+        "text_unknown_defers_without_execution",
+        with_app(|a| {
+            a.text.latest.as_ref().is_some_and(|r| {
+                r.status == Status::NeedsProvider
+                    && r.tool.is_none()
+                    && r.timings.execution.is_zero()
+            })
+        })
+        .unwrap_or(false),
+    ));
+
+    type_and_send(hwnd, "estado del sistema");
+    SendMessageW(hwnd, WM_CHAR, WPARAM(b'z' as usize), LPARAM(0));
+    // A second Enter while a request is in flight must preserve the draft.
+    SendMessageW(hwnd, WM_CHAR, WPARAM(13), LPARAM(0));
+    wait();
+    checks.push((
+        "text_busy_submit_and_completion_preserve_new_draft",
+        with_app(|a| {
+            a.session.input == "z"
+                && a.session.answer.contains("Windows")
+                && a.session.phase == Phase::Invoked
+                && a.surfaces.remaining(a.now()).is_none()
+        })
+        .unwrap_or(false),
+    ));
+
+    commit(hwnd, |a| {
+        a.session.input.clear();
+    });
+    type_and_send(hwnd, "hora");
+    SendMessageW(hwnd, WM_CLOSE, WPARAM(0), LPARAM(0));
+    wait();
+    checks.push((
+        "text_completion_does_not_reopen_collapsed_surface",
+        with_app(|a| {
+            a.surfaces.kind == SurfaceKind::Beacon
+                && a.surfaces.visible
+                && !a.session.executing
+                && a.timers == [false; 4]
+        })
+        .unwrap_or(false),
+    ));
+    checks.push((
+        "text_passive_results_preserve_foreground",
+        GetForegroundWindow() == foreground,
+    ));
+
+    // Warm up then measure core routing and actual Windows read-only primitives.
+    // Thread startup/rendering and calculator startup are deliberately excluded.
+    let mut agent = Agent::default();
+    let mut rows = Vec::new();
+    for (phrase, id) in [
+        ("hora", "current_time"),
+        ("estado del sistema", "system_status"),
+    ] {
+        for _ in 0..20 {
+            agent.handle(phrase, &mut text_backend::WindowsHost, 0);
+        }
+        let mut routing = Vec::new();
+        let mut execution = Vec::new();
+        let mut successes = 0;
+        for _ in 0..500 {
+            let response = agent.handle(phrase, &mut text_backend::WindowsHost, 0);
+            successes += usize::from(response.status == Status::Success);
+            routing.push(response.timings.routing.as_nanos());
+            execution.push(response.timings.execution.as_nanos());
+        }
+        routing.sort_unstable();
+        execution.sort_unstable();
+        rows.push(format!("{{\"tool\":\"{id}\",\"samples\":500,\"successes\":{successes},\"routing_p50_ns\":{},\"routing_p95_ns\":{},\"execution_p50_ns\":{},\"execution_p95_ns\":{}}}",routing[250],routing[475],execution[250],execution[475]));
+    }
+    let build = if cfg!(debug_assertions) {
+        "debug"
+    } else {
+        "release"
+    };
+    std::fs::write(path.with_file_name("text-latency.json"),format!("{{\"build\":\"{build}\",\"warmup_per_tool\":20,\"unit\":\"ns\",\"excludes\":[\"worker startup\",\"render\",\"calculator launch\"],\"tools\":[{}]}}",rows.join(","))).map_err(|e|Error::new(E_FAIL,e.to_string()))?;
+    commit(hwnd, |a| {
+        a.demo_submission = demo;
+        a.text = Default::default();
+        a.session.apply(Event::Reset);
+        a.surfaces.protect(&a.session);
+        a.surfaces.idle();
+    });
     Ok(())
 }

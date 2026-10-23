@@ -74,6 +74,18 @@ impl Overlay {
         style: navi_state::visual::VisualStyle,
         points: [(f32, f32); 2],
     ) -> Result<()> {
+        self.manifestation_with_transform(frame, bounds, family, style, points, None)
+    }
+
+    unsafe fn manifestation_with_transform(
+        &self,
+        frame: EffectFrame,
+        bounds: Rect,
+        family: navi_state::visual::Family,
+        style: navi_state::visual::VisualStyle,
+        points: [(f32, f32); 2],
+        transform: Option<(f32, f32)>,
+    ) -> Result<()> {
         use navi_state::visual::Family;
         let scale = if matches!(family, Family::ClickPulse | Family::DragConnector) {
             1.0
@@ -89,8 +101,13 @@ impl Overlay {
             bounds.bottom - bounds.top,
             SWP_NOACTIVATE,
         )?;
-        self.renderer
-            .draw_manifestation(self.hwnd, frame, family, style, scale, points)?;
+        if let Some(transform) = transform {
+            self.renderer
+                .draw_manifestation_varied(self.hwnd, frame, family, style, transform, points)?;
+        } else {
+            self.renderer
+                .draw_manifestation(self.hwnd, frame, family, style, scale, points)?;
+        }
         if !IsWindowVisible(self.hwnd).as_bool() {
             SetWindowPos(
                 self.hwnd,
@@ -147,20 +164,46 @@ pub(super) unsafe fn sync(hwnd: HWND, app: &mut App) {
     let now = app.now();
     app.reactions.prune(now);
     app.surfaces.expire_focus_effect(now);
-    let focus = app.surfaces.focus_effect_plan(now);
-    let frame = if let Some(plan) = focus {
-        let progress = plan.progress;
+    if !app.demo_submission
+        && app
+            .action_surface
+            .is_none_or(|plan| action_surface::focused().is_none_or(|(work, _)| work != plan.work))
+    {
+        app.action_visual.clear();
+    }
+    let action = app.action_visual.frame(now, app.effects.motion);
+    if action.is_none() {
+        app.action_surface = None;
+    }
+    let focus = if action.is_none() {
+        app.surfaces.focus_effect_plan(now)
+    } else {
+        None
+    };
+    let frame = if let Some((frame, _)) = action {
+        Some(frame)
+    } else if let Some(plan) = focus {
+        let progress = plan
+            .variation
+            .map_or(plan.progress, |v| v.progress(plan.progress));
+        let motion = if plan.variation.is_some() {
+            plan.motion
+        } else {
+            app.effects.motion
+        };
         Some(EffectFrame {
             layers: app.effects.layers.clamp(2, 4),
             mask: navi_state::holograms::STACK,
             phase: Phase::Processing,
             progress,
-            opacity: if app.effects.motion {
-                (progress * 8.0).min(1.0) * ((1.0 - progress) * 6.0).min(1.0)
-            } else {
+            opacity: (if !motion {
                 1.0
-            },
-            motion: app.effects.motion,
+            } else if let Some(v) = plan.variation {
+                v.temporal.envelope(progress)
+            } else {
+                (progress * 8.0).min(1.0) * ((1.0 - progress) * 6.0).min(1.0)
+            }) * plan.variation.map_or(1.0, |v| v.opacity_gain),
+            motion,
         })
     } else {
         app.effects.frame(now)
@@ -170,8 +213,20 @@ pub(super) unsafe fn sync(hwnd: HWND, app: &mut App) {
         return;
     };
     let result = (|| -> Result<()> {
-        let size = focus.map_or_else(|| navi_ui::effect_size(frame.mask), |plan| plan.size);
-        let dpi = focus.map_or(app.dpi, |plan| plan.dpi);
+        let result_plan = app.action_surface.unwrap_or_else(|| {
+            app.surfaces
+                .result_surface(app.work, app.dpi, app.action_visual.seed)
+        });
+        let size = if action.is_some() {
+            result_plan.size
+        } else {
+            focus.map_or_else(|| navi_ui::effect_size(frame.mask), |plan| plan.size)
+        };
+        let dpi = if action.is_some() {
+            result_plan.dpi
+        } else {
+            focus.map_or(app.dpi, |plan| plan.dpi)
+        };
         if app
             .overlay
             .as_ref()
@@ -179,32 +234,55 @@ pub(super) unsafe fn sync(hwnd: HWND, app: &mut App) {
         {
             app.overlay = Some(Overlay::new(dpi, size)?);
         }
-        let bounds = focus.map_or_else(
-            || app.surfaces.effect_bounds(app.work, app.dpi, size),
-            |plan| plan.bounds,
-        );
-        if let Some(plan) = focus {
+        let bounds = if action.is_some() {
+            result_plan.bounds
+        } else {
+            focus.map_or_else(
+                || app.surfaces.effect_bounds(app.work, app.dpi, size),
+                |plan| plan.bounds,
+            )
+        };
+        if action.is_some() {
+            app.overlay.as_ref().unwrap().manifestation_with_transform(
+                frame,
+                bounds,
+                navi_state::visual::Family::FracturedHalo,
+                navi_state::visual::VisualStyle {
+                    intensity: app.reactions.config.intensity,
+                    seed: app.action_visual.seed,
+                    temporal: None,
+                },
+                [(0.0, 0.0); 2],
+                Some((result_plan.scale, result_plan.rotation)),
+            )?;
+        } else if let Some(plan) = focus {
             let mut frame = frame;
             if plan.drag {
                 frame.progress = 0.5;
                 frame.opacity = 0.85;
                 frame.motion = false;
             }
-            app.overlay.as_ref().unwrap().manifestation(
+            app.overlay.as_ref().unwrap().manifestation_with_transform(
                 frame,
                 bounds,
                 plan.family,
                 plan.style,
                 plan.points,
+                plan.variation
+                    .map(|v| (plan.draw_scale, v.rotation_radians)),
             )?;
         } else {
             app.overlay.as_ref().unwrap().draw(frame, bounds)?;
         }
-        let remaining = focus.map_or_else(
-            || app.effects.remaining(app.now()),
-            |plan| plan.remaining_ms,
-        );
-        let interval = if app.effects.motion && focus.is_none_or(|p| !p.drag) {
+        let remaining = if let Some((_, remaining)) = action {
+            remaining
+        } else {
+            focus.map_or_else(
+                || app.effects.remaining(app.now()),
+                |plan| plan.remaining_ms,
+            )
+        };
+        let interval = if frame.motion && focus.is_none_or(|p| !p.drag) {
             50.min(remaining).max(1)
         } else {
             remaining
@@ -219,6 +297,8 @@ pub(super) unsafe fn sync(hwnd: HWND, app: &mut App) {
         app.overlay = None;
         app.effects.clear();
         app.effects.enabled = 0;
+        app.action_visual.enabled = false;
+        app.action_visual.clear();
         app.reactions.set_enabled(false);
         app.cursor = None;
         app.surfaces.clear_focus_effect();

@@ -26,7 +26,7 @@ impl Tray {
         for (slot, unit) in data
             .szTip
             .iter_mut()
-            .zip("NAVI · presencia local".encode_utf16())
+            .zip("Escribir a NAVI · Ctrl+Alt+Espacio".encode_utf16())
         {
             *slot = unit;
         }

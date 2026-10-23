@@ -1,5 +1,37 @@
 use super::*;
 use navi_state::holograms::{EffectFrame, CONTEXT, SIGNAL, STACK};
+use windows::Foundation::Numerics::Matrix3x2;
+
+fn stack_v2_transform(view: (f32, f32), scale_rotation: (f32, f32)) -> Result<Matrix3x2> {
+    let (width, height) = view;
+    let (scale, rotation) = scale_rotation;
+    if ![width, height, scale, rotation]
+        .iter()
+        .all(|value| value.is_finite())
+        || width <= 0.0
+        || height <= 0.0
+        || scale <= 0.0
+    {
+        return Err(Error::new(E_INVALIDARG, "Invalid StackV2 transform"));
+    }
+    let (sin, cos) = rotation.sin_cos();
+    let mut matrix = Matrix3x2 {
+        M11: scale * cos,
+        M12: scale * sin,
+        M21: -scale * sin,
+        M22: scale * cos,
+        ..Default::default()
+    };
+    matrix.M31 = width / 2.0 - 270.0 * matrix.M11 - 150.0 * matrix.M21;
+    matrix.M32 = height / 2.0 - 270.0 * matrix.M12 - 150.0 * matrix.M22;
+    if ![matrix.M31, matrix.M32]
+        .iter()
+        .all(|value| value.is_finite())
+    {
+        return Err(Error::new(E_INVALIDARG, "StackV2 transform overflow"));
+    }
+    Ok(matrix)
+}
 
 pub struct SignalField;
 
@@ -147,7 +179,7 @@ impl Renderer {
         self.target.Clear(Some(&D2D1_COLOR_F::default()));
         let drawn = (|| -> Result<()> {
             if frame.mask & STACK != 0 {
-                crate::layer_stack::LayerStack::draw(self, frame)?;
+                crate::layer_stack_v2::draw(self, frame, Default::default())?;
             }
             if frame.mask & SIGNAL != 0 {
                 SignalField::draw(self, frame)?;
@@ -197,29 +229,90 @@ impl Renderer {
         scale: f32,
         points: [(f32, f32); 2],
     ) -> Result<()> {
-        use navi_state::visual::Family;
-        use windows::Foundation::Numerics::Matrix3x2;
-        self.target.SetTransform(&Matrix3x2 {
+        let transform = Matrix3x2 {
             M11: scale,
             M22: scale,
             ..Default::default()
-        });
+        };
+        let restore = Matrix3x2 {
+            M11: 1.0,
+            M22: 1.0,
+            ..Default::default()
+        };
+        self.draw_manifestation_transformed(
+            hwnd,
+            frame,
+            family,
+            style,
+            (transform, restore),
+            points,
+        )
+    }
+
+    /// Center the canonical StackV2 canvas in the logical viewport, scaling and
+    /// rotating about (270, 150). Other families retain their legacy placement.
+    /// Opacity, rhythm and rotated viewport bounds are resolved by the caller.
+    /// # Safety
+    /// Requires an owning UI thread and live layered HWND.
+    pub unsafe fn draw_manifestation_varied(
+        &self,
+        hwnd: HWND,
+        frame: EffectFrame,
+        family: navi_state::visual::Family,
+        style: navi_state::visual::VisualStyle,
+        scale_rotation: (f32, f32),
+        points: [(f32, f32); 2],
+    ) -> Result<()> {
+        if !matches!(
+            family,
+            navi_state::visual::Family::StackV2
+                | navi_state::visual::Family::Sutura
+                | navi_state::visual::Family::FracturedHalo
+        ) {
+            return self.draw_manifestation(hwnd, frame, family, style, scale_rotation.0, points);
+        }
+        let transform = stack_v2_transform(
+            (
+                self.width as f32 / self.scale,
+                self.height as f32 / self.scale,
+            ),
+            scale_rotation,
+        )?;
+        let mut restore = Matrix3x2::default();
+        self.target.GetTransform(&mut restore);
+        self.draw_manifestation_transformed(
+            hwnd,
+            frame,
+            family,
+            style,
+            (transform, restore),
+            points,
+        )
+    }
+
+    unsafe fn draw_manifestation_transformed(
+        &self,
+        hwnd: HWND,
+        frame: EffectFrame,
+        family: navi_state::visual::Family,
+        style: navi_state::visual::VisualStyle,
+        transforms: (Matrix3x2, Matrix3x2),
+        points: [(f32, f32); 2],
+    ) -> Result<()> {
+        use navi_state::visual::Family;
+        self.target.SetTransform(&transforms.0);
         self.target.BeginDraw();
         self.target.Clear(Some(&D2D1_COLOR_F::default()));
         let drawn = match family {
-            Family::StackV1 => crate::layer_stack::LayerStack::draw(self, frame),
             Family::StackV2 => crate::layer_stack_v2::draw(self, frame, style),
+            Family::Sutura => crate::sutura::draw(self, frame, style),
             Family::FracturedHalo => crate::fractured_halo::draw(self, frame, style),
             Family::ClickPulse | Family::DragConnector => {
                 crate::cursor_effects::draw(self, frame, family, style, points)
             }
         };
         let ended = self.target.EndDraw(None, None);
-        self.target.SetTransform(&Matrix3x2 {
-            M11: 1.0,
-            M22: 1.0,
-            ..Default::default()
-        });
+        self.target.SetTransform(&transforms.1);
         drawn?;
         ended?;
         self.present_overlay(hwnd)
@@ -241,5 +334,226 @@ impl Renderer {
             }
         }
         counts
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn point(matrix: Matrix3x2, x: f32, y: f32) -> (f32, f32) {
+        (
+            x * matrix.M11 + y * matrix.M21 + matrix.M31,
+            x * matrix.M12 + y * matrix.M22 + matrix.M32,
+        )
+    }
+
+    fn near(actual: (f32, f32), expected: (f32, f32)) {
+        assert!((actual.0 - expected.0).abs() < 0.001, "{actual:?}");
+        assert!((actual.1 - expected.1).abs() < 0.001, "{actual:?}");
+    }
+
+    #[test]
+    fn varied_stack_center_stays_at_viewport_center() {
+        for scale in [0.4, 1.0, 1.8] {
+            for rotation in [-1.2, 0.0, 0.7, std::f32::consts::PI] {
+                let matrix = stack_v2_transform((800.0, 600.0), (scale, rotation)).unwrap();
+                near(point(matrix, 270.0, 150.0), (400.0, 300.0));
+            }
+        }
+    }
+
+    #[test]
+    fn varied_stack_corners_follow_scale_and_rotation() {
+        let matrix = stack_v2_transform((800.0, 600.0), (0.5, 0.0)).unwrap();
+        near(point(matrix, 0.0, 0.0), (265.0, 225.0));
+        near(point(matrix, 540.0, 300.0), (535.0, 375.0));
+        let matrix =
+            stack_v2_transform((800.0, 600.0), (2.0, std::f32::consts::FRAC_PI_2)).unwrap();
+        for (corner, expected) in [
+            ((0.0, 0.0), (700.0, -240.0)),
+            ((540.0, 0.0), (700.0, 840.0)),
+            ((540.0, 300.0), (100.0, 840.0)),
+            ((0.0, 300.0), (100.0, -240.0)),
+        ] {
+            near(point(matrix, corner.0, corner.1), expected);
+        }
+    }
+
+    #[test]
+    fn varied_stack_rejects_invalid_or_overflowing_transforms() {
+        for invalid in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+            assert!(stack_v2_transform((invalid, 300.0), (1.0, 0.0)).is_err());
+            assert!(stack_v2_transform((540.0, invalid), (1.0, 0.0)).is_err());
+            assert!(stack_v2_transform((540.0, 300.0), (invalid, 0.0)).is_err());
+            assert!(stack_v2_transform((540.0, 300.0), (1.0, invalid)).is_err());
+        }
+        for invalid in [0.0, -1.0] {
+            assert!(stack_v2_transform((invalid, 300.0), (1.0, 0.0)).is_err());
+            assert!(stack_v2_transform((540.0, invalid), (1.0, 0.0)).is_err());
+            assert!(stack_v2_transform((540.0, 300.0), (invalid, 0.0)).is_err());
+        }
+        assert!(stack_v2_transform((540.0, 300.0), (f32::MAX, 0.0)).is_err());
+    }
+    /// Own hidden surface only: no screen capture or synthesized external input.
+    #[test]
+    #[ignore = "requires a native Windows desktop and software Direct2D"]
+    fn native_temporal_alpha_and_transform_restore() {
+        use navi_state::{
+            reactions::Intensity,
+            visual::{Family, TemporalMotion, VisualStyle},
+        };
+        use windows::Win32::System::Com::{
+            CoInitializeEx, CoUninitialize, COINIT_APARTMENTTHREADED,
+        };
+        unsafe {
+            CoInitializeEx(None, COINIT_APARTMENTTHREADED).ok().unwrap();
+            let hwnd = CreateWindowExW(
+                WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW,
+                w!("STATIC"),
+                w!("NAVI temporal render test"),
+                WS_POPUP,
+                0,
+                0,
+                540,
+                300,
+                None,
+                None,
+                None,
+                None,
+            );
+            let result = (|| -> Result<()> {
+                if hwnd.0 == 0 {
+                    return Err(Error::from_win32());
+                }
+                let r = Renderer::new(
+                    96,
+                    SurfaceSize {
+                        width: 540.0,
+                        height: 300.0,
+                    },
+                )?;
+                let original = Matrix3x2 {
+                    M11: 0.9,
+                    M22: 0.9,
+                    M31: 3.0,
+                    M32: 7.0,
+                    ..Default::default()
+                };
+                r.target.SetTransform(&original);
+                let foreground = GetForegroundWindow();
+                for family in [Family::StackV2, Family::Sutura] {
+                    for intensity in [
+                        Intensity::Subtle,
+                        Intensity::Experimental,
+                        Intensity::Anomalous,
+                    ] {
+                        let temporal = TemporalMotion::sample(42, intensity, true);
+                        let style = VisualStyle {
+                            seed: 42,
+                            intensity,
+                            temporal: Some(temporal),
+                        };
+                        for progress in [0.0, 0.5, 1.0] {
+                            let frame = EffectFrame {
+                                layers: 4,
+                                mask: STACK,
+                                phase: Phase::Processing,
+                                progress,
+                                opacity: temporal.envelope(progress),
+                                motion: true,
+                            };
+                            r.draw_manifestation_varied(
+                                hwnd,
+                                frame,
+                                family,
+                                style,
+                                (1.0, 0.0),
+                                [(0.0, 0.0); 2],
+                            )?;
+                            let (zero, partial, opaque) = r.alpha_stats();
+                            assert!(zero > 0 && opaque == 0);
+                            assert_eq!(
+                                partial > 0,
+                                progress == 0.5,
+                                "{family:?}/{intensity:?}/{progress}"
+                            );
+                            let mut restored = Matrix3x2::default();
+                            r.target.GetTransform(&mut restored);
+                            assert_eq!(
+                                (restored.M11, restored.M22, restored.M31, restored.M32),
+                                (original.M11, original.M22, original.M31, original.M32)
+                            );
+                        }
+                    }
+                }
+                // The exact DIB must remain identical across time without motion,
+                // even when callers supply a previously animated temporal style.
+                for family in [Family::StackV2, Family::Sutura] {
+                    let style = VisualStyle {
+                        seed: 99,
+                        intensity: Intensity::Anomalous,
+                        temporal: Some(TemporalMotion::sample(99, Intensity::Anomalous, true)),
+                    };
+                    let mut previous = None;
+                    for progress in [0.1, 0.5, 0.9] {
+                        let frame = EffectFrame {
+                            layers: 4,
+                            mask: STACK,
+                            phase: Phase::Processing,
+                            progress,
+                            opacity: 1.0,
+                            motion: false,
+                        };
+                        r.draw_manifestation_varied(
+                            hwnd,
+                            frame,
+                            family,
+                            style,
+                            (1.0, 0.0),
+                            [(0.0, 0.0); 2],
+                        )?;
+                        let pixels = std::slice::from_raw_parts(
+                            r.pixels as *const u8,
+                            (r.width * r.height * 4) as usize,
+                        )
+                        .to_vec();
+                        if let Some(old) = previous {
+                            assert_eq!(pixels, old, "{family:?} static output changed");
+                        }
+                        previous = Some(pixels);
+                    }
+                }
+                assert_eq!(GetForegroundWindow(), foreground);
+                // Invalid input must leave the caller's transform intact as well.
+                let frame = EffectFrame {
+                    layers: 3,
+                    mask: STACK,
+                    phase: Phase::Processing,
+                    progress: 0.5,
+                    opacity: 1.0,
+                    motion: true,
+                };
+                assert!(r
+                    .draw_manifestation_varied(
+                        hwnd,
+                        frame,
+                        Family::Sutura,
+                        VisualStyle::default(),
+                        (f32::NAN, 0.0),
+                        [(0.0, 0.0); 2]
+                    )
+                    .is_err());
+                let mut restored = Matrix3x2::default();
+                r.target.GetTransform(&mut restored);
+                assert_eq!(restored.M31, original.M31);
+                Ok(())
+            })();
+            if hwnd.0 != 0 {
+                let _ = DestroyWindow(hwnd);
+            }
+            CoUninitialize();
+            result.unwrap();
+        }
     }
 }

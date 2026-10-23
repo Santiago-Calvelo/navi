@@ -1,13 +1,18 @@
+mod action_surface;
 mod cursor_observer;
 mod cursor_qa;
 mod desktop_observer;
 mod focus_reaction;
 mod holograms;
+mod keyboard_entry;
 mod manifestation_qa;
+mod monitor_catalog;
+mod organic;
 mod placement;
 mod pointer_reaction;
 mod reaction_options;
 pub mod surface;
+mod text_backend;
 mod tray;
 mod verification;
 
@@ -27,11 +32,13 @@ use windows::{
 };
 
 struct App {
+    action_visual: navi_state::action_visual::ActionVisual,
+    action_surface: Option<action_surface::ActionSurface>,
+    text: text_backend::TextBackend,
+    demo_submission: bool,
     observer: Option<desktop_observer::DesktopObserver>,
     cursor: Option<cursor_observer::CursorObserver>,
-    extra_hotkeys: [bool; 2],
     passive_observers: bool,
-    invocation_halo: bool,
     reactions: navi_state::reactions::ReactionEngine,
     effects: navi_state::holograms::Holograms,
     overlay: Option<holograms::Overlay>,
@@ -96,6 +103,7 @@ unsafe fn restore_focus(hwnd: HWND, app: &App) {
 }
 
 unsafe fn sync(hwnd: HWND, app: &mut App) -> Result<()> {
+    keyboard_entry::sync(hwnd, &app.session, app.surfaces.kind, app.now());
     app.interference = app.interference_until.map_or(0, |end| {
         end.saturating_sub(app.now()).div_ceil(40).min(4) as u8
     });
@@ -201,6 +209,7 @@ unsafe fn sync(hwnd: HWND, app: &mut App) -> Result<()> {
         app.timers[2] = true;
     }
     holograms::sync(hwnd, app);
+    keyboard_entry::sync(hwnd, &app.session, plan.kind, app.now());
     Ok(())
 }
 
@@ -233,6 +242,10 @@ unsafe fn update(hwnd: HWND, event: Event) {
 }
 
 unsafe fn invoke(hwnd: HWND, focus: bool) {
+    if !with_app(|a| a.demo_submission).unwrap_or(true) {
+        keyboard_entry::invoke(hwnd, focus);
+        return;
+    }
     let previous = GetForegroundWindow();
     commit(hwnd, |app| {
         focus_reaction::cancel(&mut app.reactions, &mut app.surfaces);
@@ -254,22 +267,22 @@ unsafe fn invoke(hwnd: HWND, focus: bool) {
     if focus {
         let _ = SetForegroundWindow(hwnd);
     }
-    if with_app(|a| a.invocation_halo && a.reactions.config.enabled).unwrap_or(false) {
-        reaction_options::preview(hwnd, navi_state::visual::Family::FracturedHalo);
-    }
 }
 
 unsafe fn hide(hwnd: HWND) {
+    keyboard_entry::cancel(hwnd);
     commit(hwnd, |app| {
         focus_reaction::cancel(&mut app.reactions, &mut app.surfaces);
         app.surfaces.hide();
         app.effects.clear();
+        app.action_visual.clear();
         app.interference = 0;
         app.interference_until = None;
     });
 }
 
 unsafe fn toggle_console(hwnd: HWND) {
+    keyboard_entry::cancel(hwnd);
     let previous = GetForegroundWindow();
     commit(hwnd, |app| {
         focus_reaction::cancel(&mut app.reactions, &mut app.surfaces);
@@ -309,6 +322,10 @@ unsafe fn current_hit(hwnd: HWND, lp: LPARAM) -> Hit {
 }
 
 unsafe fn preview_effect(hwnd: HWND, mask: u8) {
+    if mask & navi_state::holograms::STACK != 0 && !with_app(|a| a.demo_submission).unwrap_or(false)
+    {
+        return;
+    }
     if mask == navi_state::holograms::STACK {
         reaction_options::preview(hwnd, navi_state::visual::Family::StackV2);
         return;
@@ -328,7 +345,7 @@ unsafe fn menu(hwnd: HWND) {
     let Ok(menu) = CreatePopupMenu() else {
         return;
     };
-    let _ = AppendMenuW(menu, MF_STRING, 10, w!("Invocar · Alt+Espacio"));
+    let _ = AppendMenuW(menu, MF_STRING, 10, w!("Escribir · Ctrl+Alt+Espacio"));
     let _ = AppendMenuW(menu, MF_STRING, 11, w!("Consola · Ctrl+Alt+N"));
     let _ = AppendMenuW(menu, MF_STRING, 12, w!("Contraer a presencia mínima · Esc"));
     let _ = AppendMenuW(menu, MF_STRING, 13, w!("Siempre visible · consola"));
@@ -349,25 +366,25 @@ unsafe fn menu(hwnd: HWND) {
         };
     let _ = AppendMenuW(menu, focus_flags, 50, w!("Reaccionar a cambios de foco"));
     reaction_options::append(menu);
-    let _ = AppendMenuW(menu, MF_STRING, 30, w!("SignalField · F9"));
-    let _ = AppendMenuW(menu, MF_STRING, 31, w!("ContextFragment · F10"));
-    let _ = AppendMenuW(menu, MF_STRING, 32, w!("LayerStack · F11"));
-    let _ = AppendMenuW(menu, MF_STRING, 33, w!("Combinar las tres familias · F12"));
-    let _ = AppendMenuW(menu, MF_STRING, 42, w!("Profundidad: 2 / 4 planos"));
+    let _ = AppendMenuW(
+        menu,
+        MF_STRING,
+        30,
+        w!("SignalField · diagnóstico · sin uso asignado"),
+    );
+    let _ = AppendMenuW(
+        menu,
+        MF_STRING,
+        31,
+        w!("ContextFragment · diagnóstico simulado"),
+    );
     let _ = AppendMenuW(
         menu,
         MF_STRING,
         39,
         w!("Posición: junto a NAVI / superior izquierda"),
     );
-    let _ = AppendMenuW(
-        menu,
-        MF_STRING,
-        35,
-        w!("Efectos de sesión simulada: activar/desactivar"),
-    );
     let _ = AppendMenuW(menu, MF_STRING, 36, w!("Animación: activar/desactivar"));
-    let _ = AppendMenuW(menu, MF_STRING, 37, w!("Duración: breve / normal / larga"));
     let _ = AppendMenuW(menu, MF_STRING, 38, w!("Desactivar todos los efectos"));
     let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
     for (id, title) in [
@@ -430,7 +447,12 @@ unsafe fn menu(hwnd: HWND) {
                 0
             }
         }),
-        36 => commit(hwnd, |app| app.effects.motion = !app.effects.motion),
+        36 => commit(hwnd, |app| {
+            app.effects.motion = !app.effects.motion;
+            // Accessibility changes cancel the old plan rather than re-sampling it.
+            app.surfaces.clear_focus_effect();
+            app.reactions.clear();
+        }),
         37 => commit(hwnd, |app| {
             app.effects.duration_ms = match app.effects.duration_ms {
                 800 => 1800,
@@ -439,6 +461,8 @@ unsafe fn menu(hwnd: HWND) {
             }
         }),
         38 => commit(hwnd, |app| {
+            app.action_visual.enabled = false;
+            app.action_visual.clear();
             app.effects.enabled = 0;
             app.effects.clear();
             app.reactions.set_enabled(false);
@@ -476,6 +500,10 @@ unsafe extern "system" fn procedure(hwnd: HWND, message: u32, wp: WPARAM, lp: LP
         return LRESULT(0);
     }
     match message {
+        text_backend::MESSAGE => {
+            text_backend::complete(hwnd);
+            return LRESULT(0);
+        }
         desktop_observer::MESSAGE => {
             let source = HWND(lp.0);
             if !desktop_observer::is_current_focus_message(
@@ -488,6 +516,12 @@ unsafe extern "system" fn procedure(hwnd: HWND, message: u32, wp: WPARAM, lp: LP
             let event = desktop_observer::resolve(source);
             let changed = with_app(|app| {
                 if let Some(event) = event {
+                    if !event.own
+                        && !event.suppressed
+                        && app.reactions.config.focus_family == navi_state::visual::Family::StackV2
+                    {
+                        monitor_catalog::prepare(app);
+                    }
                     let now = app.now();
                     focus_reaction::apply(
                         &mut app.reactions,
@@ -518,6 +552,14 @@ unsafe extern "system" fn procedure(hwnd: HWND, message: u32, wp: WPARAM, lp: LP
             }
             // Win32 requires the default handler to release foreground raw input.
             return DefWindowProcW(hwnd, message, wp, lp);
+        }
+        WM_KILLFOCUS => {
+            let _ = KillTimer(hwnd, 5);
+            return LRESULT(0);
+        }
+        WM_SETFOCUS => {
+            commit(hwnd, |_| {});
+            return LRESULT(0);
         }
         WM_ACTIVATE if wp.0 as u16 != WA_INACTIVE as u16 => {
             let changed =
@@ -592,7 +634,19 @@ unsafe extern "system" fn procedure(hwnd: HWND, message: u32, wp: WPARAM, lp: LP
         }
         WM_HOTKEY => {
             match wp.0 {
-                1 => {
+                1 | 16 => {
+                    if !with_app(|a| a.demo_submission).unwrap_or(true) {
+                        if with_app(|a| {
+                            a.surfaces.kind != SurfaceKind::Beacon && GetForegroundWindow() == hwnd
+                        })
+                        .unwrap_or(false)
+                        {
+                            hide(hwnd);
+                        } else {
+                            keyboard_entry::invoke(hwnd, true);
+                        }
+                        return LRESULT(0);
+                    }
                     let active = with_app(|app| {
                         app.surfaces.visible && app.surfaces.kind != SurfaceKind::Beacon
                     })
@@ -605,8 +659,7 @@ unsafe extern "system" fn procedure(hwnd: HWND, message: u32, wp: WPARAM, lp: LP
                 }
                 2 => toggle_console(hwnd),
                 3 => cycle_demo(hwnd),
-                14 => reaction_options::preview(hwnd, navi_state::visual::Family::FracturedHalo),
-                15 => reaction_options::preview(hwnd, navi_state::visual::Family::StackV1),
+                14 | 15 => {}
                 10..=13 => preview_effect(
                     hwnd,
                     [
@@ -621,13 +674,21 @@ unsafe extern "system" fn procedure(hwnd: HWND, message: u32, wp: WPARAM, lp: LP
             return LRESULT(0);
         }
         WM_TIMER => {
+            if wp.0 == 5 {
+                keyboard_entry::tick(hwnd);
+                return LRESULT(0);
+            }
             let enabled =
                 with_app(|app| wp.0 >= 1 && wp.0 <= 4 && app.timers[wp.0 - 1]).unwrap_or(false);
             if !enabled {
                 return LRESULT(0);
             }
             match wp.0 {
-                1 => update(hwnd, Event::Tick),
+                1 => {
+                    if !text_backend::complete(hwnd) {
+                        update(hwnd, Event::Tick);
+                    }
+                }
                 2 => commit(hwnd, |app| {
                     if app.surfaces.expire(app.now()) {
                         app.session.apply(Event::SetPhase(Phase::Idle));
@@ -643,6 +704,14 @@ unsafe extern "system" fn procedure(hwnd: HWND, message: u32, wp: WPARAM, lp: LP
             return LRESULT(0);
         }
         WM_KEYDOWN => {
+            if with_app(|a| !a.demo_submission && a.surfaces.kind == SurfaceKind::Compact)
+                .unwrap_or(false)
+                && ((0x70..=0x7b).contains(&wp.0)
+                    || wp.0 == VK_TAB.0 as usize
+                    || (wp.0 == b'K' as usize && GetKeyState(VK_CONTROL.0 as i32) < 0))
+            {
+                return LRESULT(0);
+            }
             if let Some(phase) = navi_demo::phase_for_key(wp.0) {
                 update(hwnd, Event::SetPhase(phase));
             } else if wp.0 == VK_ESCAPE.0 as usize {
@@ -683,8 +752,25 @@ unsafe extern "system" fn procedure(hwnd: HWND, message: u32, wp: WPARAM, lp: LP
             return LRESULT(0);
         }
         WM_CHAR => {
+            if with_app(|a| !a.demo_submission && a.surfaces.kind == SurfaceKind::Compact)
+                .unwrap_or(false)
+            {
+                keyboard_entry::character(hwnd, wp);
+                return LRESULT(0);
+            }
             match wp.0 {
-                13 => update(hwnd, Event::Submit),
+                13 => {
+                    let demo = with_app(|a| {
+                        a.demo_submission
+                            || (a.session.input.is_empty() && a.session.phase == Phase::Listening)
+                    })
+                    .unwrap_or(false);
+                    if demo {
+                        update(hwnd, Event::Submit);
+                    } else {
+                        text_backend::submit(hwnd);
+                    }
+                }
                 8 => update(hwnd, Event::Backspace),
                 v if v >= 32 => {
                     let unit = v as u16;
@@ -725,13 +811,17 @@ unsafe extern "system" fn procedure(hwnd: HWND, message: u32, wp: WPARAM, lp: LP
                         bottom: info.rcWork.bottom,
                     };
                     app.render_key = None;
+                    monitor_catalog::refresh(app);
                 });
             }
             return LRESULT(0);
         }
         WM_DISPLAYCHANGE | WM_SETTINGCHANGE => {
             if let Ok(work) = monitor_work(hwnd) {
-                commit(hwnd, |app| app.work = work);
+                commit(hwnd, |app| {
+                    app.work = work;
+                    monitor_catalog::refresh(app);
+                });
             }
             return LRESULT(0);
         }
@@ -755,6 +845,7 @@ unsafe extern "system" fn procedure(hwnd: HWND, message: u32, wp: WPARAM, lp: LP
             return LRESULT(0);
         }
         WM_DESTROY => {
+            keyboard_entry::cancel(hwnd);
             with_app(|app| {
                 app.observer = None;
                 app.cursor = None;
@@ -771,25 +862,30 @@ unsafe extern "system" fn procedure(hwnd: HWND, message: u32, wp: WPARAM, lp: LP
 }
 
 pub fn run(snapshot: Option<PathBuf>) -> Result<()> {
-    run_mode(snapshot, None, None)
+    run_mode(snapshot, None, None, None)
 }
 
 pub fn benchmark(path: PathBuf) -> Result<()> {
-    run_mode(None, Some(path), None)
+    run_mode(None, Some(path), None, None)
 }
 pub fn observer_probe(path: PathBuf) -> Result<()> {
-    run_mode(None, None, Some(path))
+    run_mode(None, None, Some(path), None)
+}
+
+pub fn input_check(path: PathBuf) -> Result<()> {
+    run_mode(None, None, None, Some(path))
 }
 
 fn run_mode(
     snapshot: Option<PathBuf>,
     benchmark: Option<PathBuf>,
     observer_probe: Option<PathBuf>,
+    input_check: Option<PathBuf>,
 ) -> Result<()> {
     unsafe {
         SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2)?;
         CoInitializeEx(None, COINIT_APARTMENTTHREADED).ok()?;
-        let result = run_window(snapshot, benchmark, observer_probe);
+        let result = run_window(snapshot, benchmark, observer_probe, input_check);
         APP.with(|s| {
             s.borrow_mut().take();
         });
@@ -868,6 +964,7 @@ unsafe fn run_window(
     snapshot: Option<PathBuf>,
     benchmark: Option<PathBuf>,
     observer_probe: Option<PathBuf>,
+    input_check: Option<PathBuf>,
 ) -> Result<()> {
     let instance = GetModuleHandleW(None)?;
     let class = w!("NaviSessionWindow");
@@ -892,11 +989,13 @@ unsafe fn run_window(
     let started = Instant::now();
     APP.with(|s| {
         *s.borrow_mut() = Some(App {
+            action_visual: Default::default(),
+            action_surface: None,
+            text: Default::default(),
+            demo_submission: snapshot.is_some() || benchmark.is_some(),
             observer: None,
             cursor: None,
-            extra_hotkeys: [false; 2],
-            passive_observers: snapshot.is_none() && benchmark.is_none(),
-            invocation_halo: false,
+            passive_observers: snapshot.is_none() && benchmark.is_none() && input_check.is_none(),
             reactions: Default::default(),
             effects: Default::default(),
             overlay: None,
@@ -941,8 +1040,16 @@ unsafe fn run_window(
     if hwnd.0 == 0 {
         return Err(Error::from_win32());
     }
+    if snapshot.is_none() && benchmark.is_none() && input_check.is_none() {
+        with_app(|app| {
+            app.surfaces.monitors = monitor_catalog::collect();
+            app.surfaces.session_seed = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(1, |d| d.as_nanos() as u64);
+        });
+    }
     with_app(|app| app.tray = tray::Tray::new(hwnd).ok());
-    if snapshot.is_none() && benchmark.is_none() {
+    if snapshot.is_none() && benchmark.is_none() && input_check.is_none() {
         with_app(|app| match desktop_observer::DesktopObserver::new(hwnd) {
             Ok(observer) => app.observer = Some(observer),
             Err(error) => {
@@ -954,7 +1061,7 @@ unsafe fn run_window(
             }
         });
     }
-    if snapshot.is_none() && benchmark.is_none() {
+    if snapshot.is_none() && benchmark.is_none() && input_check.is_none() {
         with_app(|app| match cursor_observer::CursorObserver::new(hwnd) {
             Ok(cursor) => app.cursor = Some(cursor),
             Err(error) => {
@@ -966,21 +1073,26 @@ unsafe fn run_window(
             }
         });
     }
-    let invoke_key = RegisterHotKey(hwnd, 1, MOD_ALT | MOD_NOREPEAT, VK_SPACE.0 as u32).is_ok()
-        || RegisterHotKey(
-            hwnd,
-            1,
-            MOD_CONTROL | MOD_ALT | MOD_NOREPEAT,
-            VK_SPACE.0 as u32,
-        )
-        .is_ok();
+    let primary_key = RegisterHotKey(
+        hwnd,
+        1,
+        MOD_CONTROL | MOD_ALT | MOD_NOREPEAT,
+        VK_SPACE.0 as u32,
+    )
+    .is_ok();
+    let legacy_key = RegisterHotKey(hwnd, 16, MOD_ALT | MOD_NOREPEAT, VK_SPACE.0 as u32).is_ok();
+    let invoke_key = primary_key || legacy_key;
     let console_key =
         RegisterHotKey(hwnd, 2, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, b'N' as u32).is_ok();
     let demo_key =
         RegisterHotKey(hwnd, 3, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, b'D' as u32).is_ok();
     with_app(|app| app.hotkeys = [invoke_key, console_key, demo_key]);
     let mut effect_keys = [false; 4];
-    for (i, registered) in effect_keys.iter_mut().enumerate() {
+    for (i, registered) in effect_keys
+        .iter_mut()
+        .enumerate()
+        .filter(|_| snapshot.is_some() || benchmark.is_some())
+    {
         *registered = RegisterHotKey(
             hwnd,
             10 + i as i32,
@@ -990,23 +1102,16 @@ unsafe fn run_window(
         .is_ok();
     }
     with_app(|app| app.effect_hotkeys = effect_keys);
-    with_app(|app| {
-        for (i, key) in b"56".iter().enumerate() {
-            app.extra_hotkeys[i] = RegisterHotKey(
-                hwnd,
-                14 + i as i32,
-                MOD_CONTROL | MOD_ALT | MOD_NOREPEAT,
-                *key as u32,
-            )
-            .is_ok();
-        }
-    });
     let initial_foreground = GetForegroundWindow();
     commit(hwnd, |_| {});
     if !invoke_key {
         let _ = std::fs::write(std::env::temp_dir().join("navi-hotkeys.log"), "Alt+Space y Ctrl+Alt+Space no disponibles. Invocar con clic en el indicador o Ctrl+Alt+N si está disponible.");
     }
-    let verification = if let Some(path) = snapshot {
+    let verification = if let Some(path) = input_check {
+        let result = verification::input_only(hwnd, &path);
+        let _ = DestroyWindow(hwnd);
+        result
+    } else if let Some(path) = snapshot {
         let result = verification::verify(hwnd, &path, initial_foreground, started);
         let _ = DestroyWindow(hwnd);
         result
