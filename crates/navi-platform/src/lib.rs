@@ -12,6 +12,7 @@ mod placement;
 mod pointer_reaction;
 mod reaction_options;
 pub mod surface;
+mod system_status;
 mod text_backend;
 mod tray;
 mod verification;
@@ -59,6 +60,7 @@ struct App {
     effect_hotkeys: [bool; 4],
     failure: Option<String>,
     surrogate: Option<u16>,
+    context_entries: Vec<(String, String)>,
 }
 
 impl App {
@@ -412,6 +414,9 @@ unsafe fn menu(hwnd: HWND) {
         None,
     )
     .0;
+    // A tray menu needs a null message after TrackPopupMenu so Explorer does
+    // not immediately dismiss it when the owner window is a hidden tool window.
+    let _ = PostMessageW(hwnd, WM_NULL, WPARAM(0), LPARAM(0));
     let _ = DestroyMenu(menu);
     if reaction_options::command(hwnd, command as u32) {
         return;
@@ -1037,6 +1042,7 @@ unsafe fn run_window(
             effect_hotkeys: [false; 4],
             failure: None,
             surrogate: None,
+            context_entries: Vec::new(),
         })
     });
     let hwnd = CreateWindowExW(

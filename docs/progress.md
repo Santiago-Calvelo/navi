@@ -1,5 +1,33 @@
 # Estado operativo de NAVI
 
+## Bandeja y defaults visuales — 2026-10-22
+
+El menú contextual de la bandeja conserva el propietario en primer plano lógico y recibe `WM_NULL` después de `TrackPopupMenu`, evitando el cierre inmediato del menú con el HWND de herramienta oculto. Los defaults de reacción son `Intensity::Anomalous` y `Placement::SafeRandom`. Build/reinicio oficial terminó en `OK`; validación manual del clic derecho pendiente.
+
+## Bandeja y defaults visuales — 2026-10-22
+
+Se añadió el mensaje nulo requerido después de `TrackPopupMenu` para mantener abierto el menú contextual de la bandeja con el propietario oculto. Los defaults de `ReactionConfig` y `SurfaceManager` son ahora `Intensity::Anomalous` y `Placement::SafeRandom`.
+
+## Aplicaciones abiertas y CPU bajo demanda — 2026-10-22
+
+Fuente: reporte visual del usuario e inspección del cálculo anterior. Se retiró el filtro CPU > 0,1 %, la división por 80 ms fijos y la lista indiscriminada de procesos. El backend enumera aplicaciones con ventanas visibles (también minimizadas), excluye NAVI y ventanas decorativas, conserva aplicaciones en 0 %, agrega procesos relacionados y usa una muestra de un segundo con tiempo real por PID y comprobación de fecha de creación. Nombres habituales legibles, hasta seis resultados ordenados por CPU; errores de acceso se muestran como no disponibles. Sin lectura de títulos/contenido, polling ni dependencias nuevas. La medición no replica exactamente el Administrador de tareas; agrupaciones UWP/especiales y ventanas de muestreo pueden diferir. Módulo nuevo: crates/navi-platform/src/system_status.rs; integración vía WindowsHost y Response.data. Mantiene el contexto independiente del reposo y sin halo. Build release/reinicio oficial terminó en OK; ejecutable canónico actualizado y NAVI iniciado. QA manual pendiente a cargo del usuario, sin tests ni QA ejecutados por el agente.
+
+## Contexto independiente del retorno a reposo — 2026-10-22
+
+Inspección: el retorno al indicador restaura el foco previo y la reacción de foco borraba ContextFragment. Ahora los eventos de foco no sustituyen un contexto activo; al iniciar la respuesta contextual se retiran las manifestaciones de foco/acción anteriores. La superficie principal puede permanecer en reposo mientras el contexto completa su duración. Build/reinicio release oficial finalizó en OK, con NAVI iniciado; validación visual a cargo del usuario, sin QA adicional ejecutado.
+
+## Tiempo de lectura contextual — 2026-10-22
+
+ContextFragment de estado usa 5600 ms: entrada de 200 ms, 5200 ms con opacidad completa y salida de 200 ms. Los datos se calculan en WindowsHost (adaptador del backend en navi-platform), se entregan en Response.data y el renderer sólo dibuja nombres y porcentajes formateados. La agrupación es por ejecutable: no reproduce exactamente los grupos ni la métrica del Administrador de tareas. Build/reinicio oficial ejecutado con salida OK; ejecutable canónico actualizado el 22/10/2026 a las 23:24:26 y NAVI iniciado. Validación manual a cargo del usuario, sin tests ni QA ejecutados en esta revisión.
+
+## ContextFragment legible — 2026-10-22
+
+La respuesta textual de «estado del sistema» ahora es breve y no duplica los datos mostrados en el fragmento. El panel compacto se oculta durante la consulta y ContextFragment presenta hasta seis aplicaciones agrupadas por ejecutable, con CPU en formato legible. La medición se asocia por PID para evitar porcentajes incorrectos cuando existen varios procesos con el mismo nombre. Esta consulta no dispara FracturedHalo; sólo muestra el contexto temporal y luego vuelve al indicador mínimo. `cargo check --offline -p navi-app` terminó correctamente. El build release alcanzó los crates pero no pudo reemplazar `target/release/navi-app.exe` por acceso denegado porque NAVI seguía ejecutándose; el ejecutable oficial no se actualizó. Pendiente cerrar NAVI normalmente y ejecutar `./scripts/build-run.ps1`, además de la validación visual del usuario.
+
+## ContextFragment real — 2026-10-22
+
+`ContextFragment` ahora recibe datos reales sólo para la consulta «estado del sistema». `WindowsHost` toma dos muestras breves de procesos locales mediante ToolHelp/GetProcessTimes, calcula el porcentaje aproximado por núcleo y conserva las tres aplicaciones con mayor actividad. El resultado estructurado se entrega al renderer; el fragmento muestra nombre y porcentaje, sin títulos de ventana, contenido ni historial. La consulta permanece bajo demanda y no inicia polling en reposo. El build/reinicio oficial terminó en `OK`; no se ejecutaron pruebas ni QA adicional.
+
 ## Organización de cambios en Git — 2026-10-22
 
 Por pedido del usuario, los cambios pendientes se agrupan en commits con gitmoji: núcleo textual; integración compacta y composición orgánica; corrección de foco; corrección de arrastre; halo y respuestas operativas; laboratorio visual independiente; skill de orquestación; documentación; build y reinicio automático con política de agentes. Las correcciones se separaron mediante el índice de Git, conservando los archivos de trabajo. No se modifica la implementación ni se repiten compilaciones o QA por esta tarea de organización; el último build/reinicio exitoso sigue siendo el documentado debajo. Sin publicación remota.

@@ -44,7 +44,7 @@ impl Holograms {
     }
     pub fn preview_timed(&mut self, mask: u8, phase: Phase, now: u64, duration: u64) {
         self.preview(mask, phase, now);
-        self.playback_duration = duration.clamp(200, 4000);
+        self.playback_duration = duration.clamp(200, 10_000);
     }
     pub fn phase_changed(&mut self, phase: Phase, now: u64) {
         if phase == Phase::Idle || self.enabled == 0 {
@@ -65,7 +65,9 @@ impl Holograms {
             return None;
         }
         let progress = elapsed as f32 / duration as f32;
-        let opacity = if self.motion {
+        let opacity = if self.motion && mask == CONTEXT {
+            (elapsed as f32 / 200.0).min(1.0) * ((duration - elapsed) as f32 / 200.0).min(1.0)
+        } else if self.motion {
             (progress * 8.0).min(1.0) * ((1.0 - progress) * 6.0).min(1.0)
         } else {
             1.0

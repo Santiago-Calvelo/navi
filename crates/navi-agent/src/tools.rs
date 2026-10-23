@@ -46,10 +46,7 @@ impl ToolKind {
             Self::Help => ("help", "Mostrar las solicitudes conocidas"),
             Self::CurrentTime => ("current_time", "Consultar la hora local"),
             Self::SystemStatus => ("system_status", "Consultar sistema y procesadores"),
-            Self::OpenCalculator => (
-                "open_calculator",
-                "Iniciar la calculadora de Windows",
-            ),
+            Self::OpenCalculator => ("open_calculator", "Iniciar la calculadora de Windows"),
         };
         let launch = self == Self::OpenCalculator;
         ToolDefinition {
@@ -173,13 +170,7 @@ impl ToolRegistry {
             }
             ToolKind::SystemStatus => {
                 let data = host.system_status()?;
-                let text = data
-                    .iter()
-                    .take(16)
-                    .map(|(k, v)| format!("{k}: {v}"))
-                    .collect::<Vec<_>>()
-                    .join(". ");
-                Ok((text, data))
+                Ok(("Estado del sistema disponible.".into(), data))
             }
             ToolKind::OpenCalculator => {
                 host.open_calculator()?;

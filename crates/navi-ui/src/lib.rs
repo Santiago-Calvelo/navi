@@ -4,7 +4,7 @@ pub fn effect_size(mask: u8) -> SurfaceSize {
     if mask & (navi_state::holograms::CONTEXT | navi_state::holograms::STACK) != 0 {
         SurfaceSize {
             width: 540.0,
-            height: 300.0,
+            height: 410.0,
         }
     } else {
         SurfaceSize {

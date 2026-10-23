@@ -120,6 +120,7 @@ impl Renderer {
         hwnd: HWND,
         frame: EffectFrame,
         scale: f32,
+        context: &[(String, String)],
     ) -> Result<()> {
         use windows::Foundation::Numerics::Matrix3x2;
         self.target.SetTransform(&Matrix3x2 {
@@ -127,7 +128,7 @@ impl Renderer {
             M22: scale,
             ..Default::default()
         });
-        let result = self.draw_holograms(hwnd, frame);
+        let result = self.draw_holograms(hwnd, frame, context);
         self.target.SetTransform(&Matrix3x2 {
             M11: 1.0,
             M22: 1.0,
@@ -174,7 +175,12 @@ impl Renderer {
     }
     /// # Safety
     /// Requires a live layered HWND owned by the renderer's UI thread.
-    pub unsafe fn draw_holograms(&self, hwnd: HWND, frame: EffectFrame) -> Result<()> {
+    pub unsafe fn draw_holograms(
+        &self,
+        hwnd: HWND,
+        frame: EffectFrame,
+        context: &[(String, String)],
+    ) -> Result<()> {
         self.target.BeginDraw();
         self.target.Clear(Some(&D2D1_COLOR_F::default()));
         let drawn = (|| -> Result<()> {
@@ -185,7 +191,7 @@ impl Renderer {
                 SignalField::draw(self, frame)?;
             }
             if frame.mask & CONTEXT != 0 {
-                crate::context_fragment::ContextFragment::draw(self, frame)?;
+                crate::context_fragment::ContextFragment::draw(self, frame, context)?;
             }
             Ok(())
         })();

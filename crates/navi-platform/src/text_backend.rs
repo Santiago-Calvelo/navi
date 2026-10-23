@@ -124,23 +124,66 @@ pub(super) unsafe fn complete(hwnd: HWND) -> bool {
     };
     commit(hwnd, |a| {
         let was_hidden = a.surfaces.kind == SurfaceKind::Beacon;
+        let is_system_status =
+            response.tool.as_deref() == Some("system_status") && response.status == Status::Success;
         a.session.apply(Event::CompleteRequest {
             text: response.text,
             confirmation: response.status == Status::NeedsConfirmation,
             failed: matches!(response.status, Status::Error | Status::Rejected),
         });
+        a.context_entries = if is_system_status {
+            response
+                .data
+                .iter()
+                .filter(|(key, _)| key.starts_with("cpu_app_"))
+                .map(|(_, value)| {
+                    value.split_once('|').map_or_else(
+                        || ("Aplicación".into(), value.clone()),
+                        |(name, cpu)| {
+                            let label = name.trim_end_matches(".exe").replace('_', " ");
+                            let readable_cpu = if cpu == "no disponible" {
+                                "CPU no disponible".into()
+                            } else {
+                                format!("{cpu} % CPU").replace('.', ",")
+                            };
+                            (label, readable_cpu)
+                        },
+                    )
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
         a.surfaces.protect(&a.session);
-        if !was_hidden {
+        if is_system_status && a.surfaces.kind != SurfaceKind::Console {
+            a.surfaces.idle();
+        } else if !was_hidden {
             a.surfaces.present(a.session.phase, a.now());
-            a.effects.phase_changed(a.session.phase, a.now());
-            if matches!(response.status, Status::Success | Status::Error)
-            {
+        }
+        if is_system_status || !was_hidden {
+            if !is_system_status {
+                a.effects.phase_changed(a.session.phase, a.now());
+            }
+            let show_action_halo = matches!(response.status, Status::Success | Status::Error)
+                && response.tool.as_deref() != Some("system_status");
+            if show_action_halo {
                 a.surfaces.clear_focus_effect();
                 a.effects.clear();
                 a.action_visual
                     .start(a.now(), response.status == Status::Error);
                 a.action_surface = action_surface::focused()
                     .map(|(work, dpi)| a.surfaces.result_surface(work, dpi, a.action_visual.seed));
+            }
+            if !a.context_entries.is_empty() {
+                a.surfaces.clear_focus_effect();
+                a.action_visual.clear();
+                a.effects.clear();
+                a.effects.preview_timed(
+                    navi_state::holograms::CONTEXT,
+                    Phase::Responding,
+                    a.now(),
+                    5_600,
+                );
             }
         }
     });
@@ -174,11 +217,16 @@ impl ToolHost for WindowsHost {
         let threads = std::thread::available_parallelism().map_err(|_| {
             ToolError::new(ErrorCode::ToolFailed, "No se pudo consultar el sistema.")
         })?;
-        Ok(vec![
+        let mut data = vec![
             ("sistema".into(), "Windows".into()),
             ("arquitectura".into(), std::env::consts::ARCH.into()),
             ("procesadores lógicos".into(), threads.to_string()),
-        ])
+        ];
+        for (index, (name, cpu)) in system_status::applications()?.into_iter().enumerate() {
+            let cpu = cpu.map_or_else(|| "no disponible".into(), |cpu| format!("{cpu:.1}"));
+            data.push((format!("cpu_app_{index}"), format!("{name}|{cpu}")));
+        }
+        Ok(data)
     }
     fn open_calculator(&mut self) -> std::result::Result<(), ToolError> {
         // GetSystemDirectory supplies an absolute OS directory; neither the

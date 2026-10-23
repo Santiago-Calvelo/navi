@@ -3,9 +3,14 @@ use navi_state::holograms::EffectFrame;
 
 pub struct ContextFragment;
 
+pub type ContextEntry = (String, String);
+
 impl ContextFragment {
-    pub(super) unsafe fn draw(r: &Renderer, frame: EffectFrame) -> Result<()> {
-        let data = navi_demo::ContextSample::for_phase(frame.phase);
+    pub(super) unsafe fn draw(
+        r: &Renderer,
+        frame: EffectFrame,
+        entries: &[ContextEntry],
+    ) -> Result<()> {
         let a = frame.opacity;
         let color = if frame.phase == Phase::Error {
             ERROR.0
@@ -31,16 +36,13 @@ impl ContextFragment {
             None,
         );
         r.text(
-            "contexto / simulado",
+            "APLICACIONES / CPU (1 s)",
             [x, 38.0, x + 245.0, 59.0],
             (color, a * 0.9),
             &r.small,
         )?;
-        for (y, label, value) in [
-            (78.0, "aplicación", data.application),
-            (133.0, "archivo", data.file),
-            (188.0, "acción", data.action),
-        ] {
+        for (index, (label, value)) in entries.iter().take(6).enumerate() {
+            let y = 78.0 + index as f32 * 55.0;
             r.text(
                 label,
                 [x, y, x + 235.0, y + 18.0],
