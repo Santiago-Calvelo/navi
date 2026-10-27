@@ -7,6 +7,9 @@ use navi_state::{
 use windows::Win32::UI::Shell::*;
 
 pub(super) unsafe fn apply(app: &mut App, sample: CursorSample, now: u64) -> bool {
+    if app.startup.is_some() {
+        return false;
+    }
     let kind = match sample.kind {
         CursorKind::Click => DesktopKind::MouseClick,
         CursorKind::DragStart => DesktopKind::MouseDragStart,

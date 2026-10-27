@@ -201,7 +201,7 @@ impl Renderer {
         self.present_overlay(hwnd)
     }
 
-    unsafe fn present_overlay(&self, hwnd: HWND) -> Result<()> {
+    pub(super) unsafe fn present_overlay(&self, hwnd: HWND) -> Result<()> {
         UpdateLayeredWindow(
             hwnd,
             None,

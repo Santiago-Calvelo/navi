@@ -52,7 +52,9 @@ namespace NaviBuild {
     $build = Start-Process -FilePath $cargo -WorkingDirectory $repo `
         -ArgumentList 'build','--release','--offline','-p','navi-app' `
         -RedirectStandardOutput (Join-Path $logs 'stdout.log') -RedirectStandardError $log `
-        -WindowStyle Hidden -Wait -PassThru
+        -WindowStyle Hidden -PassThru
+    $null = $build.Handle
+    $build.WaitForExit()
     if ($build.ExitCode -ne 0) { throw "Compilacion fallida (codigo $($build.ExitCode))." }
     $navi = Start-Process -FilePath $executable -WorkingDirectory $repo -WindowStyle Hidden -PassThru
     if ($navi.WaitForExit(1000)) { throw "NAVI termino durante el inicio (codigo $($navi.ExitCode))." }

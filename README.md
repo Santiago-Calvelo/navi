@@ -47,10 +47,11 @@ El indicador `navi_`, la tarjeta compacta y la consola comparten la experiencia 
 - `FracturedHalo`: resultado de acciones; usa rojo cuando la acción falla.
 - `ClickPulse`: clics.
 - `DragConnector`: arrastres, conservando el ancla entre monitores.
+- `Palimpsesto`: texto suspendido al iniciar NAVI, con frases variables y referencias sutiles a *Serial Experiments Lain*.
 - `ContextFragment`: información contextual bajo demanda, como aplicaciones abiertas y actividad de CPU.
 - `SignalField` y `Sutura`: composiciones disponibles para diagnóstico y futuras decisiones de producto.
 
-Los estudios Astra —Palimpsesto, Nacre, Herbario, Umbral y el laboratorio de Sutura— se conservan en `experiments/visual-genesis/` como investigación visual aislada. No son funcionalidades operativas de NAVI.
+Los estudios Astra —Nacre, Herbario, Umbral y el laboratorio de Sutura— se conservan en `experiments/visual-genesis/` como investigación visual aislada. La implementación operativa de Palimpsesto conserva su experimento original y se activa una vez al iniciar NAVI; se cancela al invocar, ocultar o desactivar la interfaz, activar un preview o cambiar la pantalla o el DPI.
 
 ## Uso
 
@@ -59,7 +60,7 @@ Requisitos: Windows 10/11 x64, Rust estable con toolchain MSVC, Visual Studio Bu
 Desde PowerShell:
 
 ```powershell
-Set-Location F:\navi
+Set-Location <ruta-del-repositorio>
 .\scripts\build-run.ps1
 ```
 
@@ -68,8 +69,10 @@ El script cierra la instancia oficial de NAVI de forma ordenada, compila en rele
 El ejecutable oficial es:
 
 ```text
-F:\navi\target\release\navi-app.exe
+<ruta-del-repositorio>\target\release\navi-app.exe
 ```
+
+El icono de NAVI se conserva en `assets/navi.ico` y se integra tanto en el ejecutable como en la bandeja de Windows.
 
 Para invocar la interfaz compacta:
 

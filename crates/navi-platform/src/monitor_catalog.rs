@@ -105,6 +105,9 @@ pub(super) unsafe fn prepare(app: &mut App) {
 }
 
 pub(super) unsafe fn refresh(app: &mut App) {
+    if app.startup.take().is_some() {
+        app.overlay = None;
+    }
     if app.passive_observers {
         app.surfaces.monitors = collect();
     }

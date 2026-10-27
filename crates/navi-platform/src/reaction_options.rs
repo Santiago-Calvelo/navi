@@ -153,6 +153,9 @@ pub(super) unsafe fn command(hwnd: HWND, id: u32) -> bool {
 
 pub(super) unsafe fn preview(hwnd: HWND, family: Family) {
     commit(hwnd, |a| {
+        if a.startup.take().is_some() {
+            a.overlay = None;
+        }
         if matches!(family, Family::StackV2 | Family::Sutura) {
             monitor_catalog::prepare(a);
         }

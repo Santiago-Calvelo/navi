@@ -20,6 +20,10 @@ Rust 2021, Windows 10/11 x64 y bindings `windows` 0.54.0. No hay runtime web, se
 
 ## Flujos existentes
 
+### Inicio con Palimpsesto (2026-10-26)
+
+El inicio normal selecciona una frase de `navi-state::startup::PhraseRotation` y persiste sólo índices de una bolsa barajada en `%LOCALAPPDATA%\NAVI\startup-phrases.txt`. `navi-platform::startup` fija monitor, DPI, geometría y plazo de 6000 ms; reutiliza el overlay y timer 4, con prioridad sobre reacciones decorativas hasta vencer o cancelar. `navi-render::palimpsesto` recibe frase, progreso, movimiento y seed, sin consultar el escritorio. Invocación, previews, desactivación y cambios de pantalla/DPI cancelan; no se ejecuta en diagnósticos ni en reposo. El laboratorio original permanece independiente. Véase [ADR 0007](decisions/0007-palimpsesto-de-inicio.md).
+
 ### Variación compartida (Hito 1)
 
 `navi-state::visual::ResolvedVariation` selecciona parámetros puros y reproducibles. `monitor_catalog` aporta área útil física, DPI, exclusiones y cobertura fullscreen; actualiza la topología por mensajes, sin polling. `organic::OrganicPlanner` resuelve ocho candidatos por monitor y recencia acotada. `SurfaceManager` almacena la selección de LayerStack v2 para foco/preview; `ReactionEngine.active` recibe la misma duración. `FocusEffectPlan` transmite variación, escala final y movimiento al overlay; el renderer consume la transformación y el frame sin observar escritorio. No hay selección por frame. Cambios de pantalla/DPI cancelan, no recolocan aleatoriamente. Cursor, otras familias y ActionProjection conservan su camino anterior. Contrato y límites: [ADR 0004](decisions/0004-variacion-organica-por-manifestacion.md).

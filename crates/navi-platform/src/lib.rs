@@ -12,6 +12,7 @@ mod placement;
 mod pointer_reaction;
 mod reaction_options;
 pub mod surface;
+mod startup;
 mod system_status;
 mod text_backend;
 mod tray;
@@ -33,6 +34,7 @@ use windows::{
 };
 
 struct App {
+    startup: Option<startup::Startup>,
     action_visual: navi_state::action_visual::ActionVisual,
     action_surface: Option<action_surface::ActionSurface>,
     text: text_backend::TextBackend,
@@ -118,6 +120,9 @@ unsafe fn sync(hwnd: HWND, app: &mut App) -> Result<()> {
     }
     app.timers = [false; 4];
     if !plan.visible {
+        if app.startup.take().is_some() {
+            app.overlay = None;
+        }
         restore_focus(hwnd, app);
         SetWindowPos(
             hwnd,
@@ -536,6 +541,11 @@ unsafe extern "system" fn procedure(hwnd: HWND, message: u32, wp: WPARAM, lp: LP
             }
             let event = desktop_observer::resolve(source);
             let changed = with_app(|app| {
+                if app.startup.is_some() {
+                    monitor_catalog::prepare(app);
+                    // Preserve the startup read interval; sync still cancels for fullscreen.
+                    return true;
+                }
                 if let Some(event) = event {
                     if !event.own
                         && !event.suppressed
@@ -1010,6 +1020,7 @@ unsafe fn run_window(
     let started = Instant::now();
     APP.with(|s| {
         *s.borrow_mut() = Some(App {
+            startup: None,
             action_visual: Default::default(),
             action_surface: None,
             text: Default::default(),
@@ -1125,6 +1136,9 @@ unsafe fn run_window(
     }
     with_app(|app| app.effect_hotkeys = effect_keys);
     let initial_foreground = GetForegroundWindow();
+    if snapshot.is_none() && benchmark.is_none() && observer_probe.is_none() && input_check.is_none() {
+        with_app(|app| startup::begin(app));
+    }
     commit(hwnd, |_| {});
     if !invoke_key {
         let _ = std::fs::write(std::env::temp_dir().join("navi-hotkeys.log"), "Alt+Space y Ctrl+Alt+Space no disponibles. Invocar con clic en el indicador o Ctrl+Alt+N si está disponible.");
