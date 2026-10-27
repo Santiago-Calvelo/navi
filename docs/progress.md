@@ -1,5 +1,42 @@
 # Estado operativo de NAVI
 
+## Logo de NAVI — 2026-10-26
+
+- Único cambio funcional solicitado: usar el asset del usuario como identidad gráfica del ejecutable y bandeja. Conversión de formato a `assets/navi.ico`, conservando diseño/fondo, con tamaños Windows de 16 a 256 px; recurso incrustado mediante `crates/navi-app/build.rs` y cargado por `navi-platform/src/tray.rs`. Sin dependencias nuevas ni cambios de interfaz o animaciones.
+- `scripts/build-run.ps1` terminó con código 0 y última línea `OK`; ejecutable canónico actualizado: `F:\navi\target\release\navi-app.exe`. Validación visual exclusiva del usuario. Cachés, logs y archivos intermedios retirados después del build; para quitar el último auxiliar bloqueado se cerró NAVI ordenadamente y se reinició desde la ruta oficial, sin recompilar ni forzar su cierre.
+
+## Retirada de logs e informes auxiliares — 2026-10-26
+
+- Pedido explícito posterior: retirar también logs, informes y auxiliares que la primera limpieza había conservado. Eliminados los 26 JSON y dos logs de `artifacts/`, nueve documentos de tareas terminadas de `docs/agent-work/`, el informe raíz `VALIDATION.md`, los informes históricos `PARALLEL_EFFECTS.md`, `WINDOW_FOCUS.md`, `visual-recovery.md`, el brief temporal de Astra y los scripts auxiliares `measure-effects.ps1`/`export-preview.ps1`.
+- Actualizadas las referencias en documentación vigente y ADR, indicando la retirada de evidencia histórica sin alterar sus decisiones. No quedan informes generados ni logs dentro del árbol del proyecto, excluyendo los metadatos internos de Git. Las rutas de salida que aparecen en código/documentación son destinos para futuras ejecuciones, no archivos conservados.
+- Preservados los ejecutables release de NAVI y laboratorio, código de aplicación y pruebas mantenidas, experimentos originales, configuración, documentación vigente, ADR y cambios pendientes. Sin modificaciones de producción ni compilación nueva; el release sigue siendo el de la corrección tipográfica. El script oficial podrá recrear logs/cachés al volver a usarse.
+
+## Limpieza de artefactos — 2026-10-26
+
+- Alcance explícitamente aprobado: limpieza completa de archivos generados, conservando ejecutables de NAVI/laboratorio, informes JSON y últimos logs de compilación. Eliminados cachés debug/release, builds auxiliares, símbolos, archivos intermedios, los cinco auxiliares cursor-gesture-tests/placement-tests señalados por el usuario, 163 capturas y `artifacts/split-pending-commits.ps1`.
+- Resultado: aproximadamente 4,30 GiB liberados. El auxiliar `target/release/deps/navi_app.exe` requirió un segundo intento con permisos elevados y también se eliminó. En ambos árboles target quedan únicamente sus ejecutables release; en artifacts permanecen 26 informes JSON y dos logs. Las capturas históricas citadas en documentos de hitos anteriores fueron retiradas por esta limpieza; sus informes conservados no equivalen a nueva validación.
+- Preservados `F:\navi\target\release\navi-app.exe`, `experiments/visual-genesis/target/release/navi-visual-genesis.exe`, fuentes, experimentos originales, Cargo.lock, documentación, configuración y cambios pendientes. No se encontraron duplicados exactos entre archivos del proyecto fuera de artefactos; user_panel (platform/render), layer_stack v1 y action_projection siguen conservados como fuentes históricas desconectadas, según ADR 0006.
+- Sin cambios de código de producción ni nueva compilación: reconstruir regeneraría las cachés eliminadas. El último build oficial exitoso sigue siendo el de la corrección tipográfica documentada abajo. La próxima compilación deberá reconstruir cachés. Sin tests, QA ni validación funcional/visual por el agente.
+
+## Corrección tipográfica de Palimpsesto — 2026-10-26
+
+- Evidencia: captura del usuario e inspección de `navi-render/src/palimpsesto.rs`; avance fijo de 29 DIP y centrado por número de caracteres sobre Georgia proporcional producían huecos, solapamientos y recorte de líneas.
+- Alcance aprobado e implementado: layouts DirectWrite por línea, posiciones reales de caracteres (UTF-16), centrado por ancho medido y ajuste uniforme al ancho útil. Durante la pausa se dibuja la línea completa; entrada y salida conservan letras individuales. Layouts y posiciones se almacenan una vez por frase en el renderer. Sin cambios en frases, duración, trigger, plataforma ni laboratorio.
+- Archivos: `crates/navi-render/src/palimpsesto.rs`, recursos de `crates/navi-render/src/lib.rs` y documentación afectada. `.\scripts\build-run.ps1` terminó con código 0 y última línea `OK`: release canónico actualizado y NAVI reiniciado desde `F:\navi\target\release\navi-app.exe`.
+- Sin tests ni comprobación funcional, visual, manual o de QA por el agente. Próximo paso: lectura/espaciado a evaluación exclusiva del usuario. La captura previa documenta un defecto; la compilación exitosa no valida legibilidad.
+
+## Palimpsesto de inicio — 2026-10-26
+
+- Fuente de evidencia: inspección de código y pedido del usuario de una frase diferente al iniciar, con referencias sutiles a Lain. Objetivo: dar función cotidiana a las letras en el aire del laboratorio.
+- Implementado: adaptación de Palimpsesto al inicio normal, 6000 ms, 48 frases originales y bolsa barajada persistente de índices. Sin repetición dentro del ciclo ni inmediata al cambiar de ciclo, mientras el estado sea válido y escribible. Estado/render/plataforma separados; overlay y timer existentes; cancelación por invocación, desactivación, previews y pantalla/DPI. Experimento original conservado.
+- Módulos: `navi-state/src/startup.rs`, `navi-render/src/palimpsesto.rs`, `navi-platform/src/startup.rs` e integración. Contrato: [ADR 0007](decisions/0007-palimpsesto-de-inicio.md).
+- Compilación release oficial: `.\scripts\build-run.ps1` terminó con código 0 y última línea `OK`; ejecutable canónico actualizado y reiniciado: `F:\navi\target\release\navi-app.exe`. Sin dependencias nuevas, descarga ni redirección de target.
+- Ajuste indispensable de `scripts/build-run.ps1`: el primer intento compiló (33,26 s) pero quedó esperando en `Start-Process -Wait`, sin `OK`; se interrumpió sólo el comando propio. Ahora conserva el handle de Cargo y usa `WaitForExit()`. Un intento intermedio sin conservar el handle obtuvo código de salida vacío pese a compilar; corregido. El intento final completó build/reinicio con `OK`. No se forzó el cierre de NAVI.
+- Sin tests, QA ni validación visual/manual ejecutados. La validación visual/manual y de QA corresponde al usuario.
+- Límites: repertorio finito; estado ausente/inválido reinicia la bolsa y un fallo de escritura limita la continuidad entre arranques. Sin proveedor, red, micrófono ni datos del escritorio persistidos. Rendimiento y legibilidad no medidos.
+- Próximo paso: el usuario evalúa lectura, ritmo, frases y cancelación según [validation.md](validation.md). Compilación comprobada mediante `OK`; criterio visual a cargo del usuario.
+- Hito: 2026-10-26, primera integración de Palimpsesto como manifestación de inicio.
+
 ## Bandeja y defaults visuales — 2026-10-22
 
 El menú contextual de la bandeja conserva el propietario en primer plano lógico y recibe `WM_NULL` después de `TrackPopupMenu`, evitando el cierre inmediato del menú con el HWND de herramienta oculto. Los defaults de reacción son `Intensity::Anomalous` y `Placement::SafeRandom`. Build/reinicio oficial terminó en `OK`; validación manual del clic derecho pendiente.
@@ -55,7 +92,7 @@ Fuente: fallos visuales reportados por el usuario e inspección de código. Alca
 
 ## Evidencia del hito anterior
 
-Actualización: 2026-10-22 (Argentina). Evidencia: inspección del árbol real, pedido explícito de consolidación, informes por archivo, revisión independiente, 96 tests, una prueba nativa render separada, diagnóstico --input-check de ocho comprobaciones y build release canónico. El usuario reporta completado Hito 2; la consolidación actual está implementada, pendiente de validación visual/manual. [Evidencia](agent-work/2026-10-22-consolidacion/04-validation/integracion.md), [ADR 0006](decisions/0006-consolidacion-compacto-y-efectos.md).
+Actualización: 2026-10-22 (Argentina). Evidencia histórica reportada: inspección del árbol real, pedido explícito de consolidación, informes por archivo, revisión independiente, 96 tests, una prueba nativa render separada, diagnóstico --input-check de ocho comprobaciones y build release canónico. El usuario reporta completado Hito 2; la consolidación actual está implementada, pendiente de validación visual/manual. Los informes auxiliares se retiraron por limpieza explícita del usuario el 2026-10-26; se conserva [ADR 0006](decisions/0006-consolidacion-compacto-y-efectos.md).
 
 ## Objetivo y fase
 

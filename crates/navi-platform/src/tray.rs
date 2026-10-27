@@ -2,6 +2,7 @@ use windows::{
     core::*,
     Win32::{
         Foundation::*,
+        System::LibraryLoader::GetModuleHandleW,
         UI::{Shell::*, WindowsAndMessaging::*},
     },
 };
@@ -20,7 +21,7 @@ impl Tray {
             uID: 1,
             uFlags: NIF_MESSAGE | NIF_ICON | NIF_TIP,
             uCallbackMessage: CALLBACK,
-            hIcon: LoadIconW(None, IDI_APPLICATION)?,
+            hIcon: LoadIconW(HINSTANCE(GetModuleHandleW(None)?.0), PCWSTR(1 as *const u16))?,
             ..Default::default()
         };
         for (slot, unit) in data

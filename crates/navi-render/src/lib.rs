@@ -5,6 +5,7 @@ mod cursor_effects;
 mod fractured_halo;
 pub mod holograms;
 mod layer_stack_v2;
+mod palimpsesto;
 mod sutura;
 use navi_ui::ERROR;
 use navi_ui::*;
@@ -30,6 +31,9 @@ pub struct Renderer {
     label: IDWriteTextFormat,
     title: IDWriteTextFormat,
     body: IDWriteTextFormat,
+    air: IDWriteTextFormat,
+    write: IDWriteFactory,
+    startup_text: std::cell::RefCell<Option<palimpsesto::StartupText>>,
     dc: HDC,
     bitmap: HBITMAP,
     previous: HGDIOBJ,
@@ -71,6 +75,11 @@ impl Renderer {
             f.SetWordWrapping(DWRITE_WORD_WRAPPING_WRAP)?;
             Ok(f)
         };
+        let air = write.CreateTextFormat(
+            w!("Georgia"), None, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL,
+            DWRITE_FONT_STRETCH_NORMAL, 48.0, w!("es-AR"),
+        )?;
+        air.SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP)?;
         let small = format(11.0)?;
         let label = format(13.0)?;
         let title = format(25.0)?;
@@ -106,6 +115,9 @@ impl Renderer {
             label,
             title,
             body,
+            air,
+            write,
+            startup_text: Default::default(),
             dc,
             bitmap,
             previous,

@@ -5,7 +5,7 @@ Fecha: 2026-10-22.
 
 ## Contexto
 
-Las manifestaciones libres repiten monitor, posición y tamaño. El usuario aprobó el contrato de [recuperación visual](../visual-recovery.md), limitado inicialmente a una familia existente, conservando frontend y triggers.
+Las manifestaciones libres repiten monitor, posición y tamaño. El usuario aprobó el contrato de recuperación visual, limitado inicialmente a una familia existente, conservando frontend y triggers. El informe de investigación enlazado originalmente se retiró por limpieza explícita del usuario el 2026-10-26; el contrato se conserva en esta decisión.
 
 ## Alternativas
 

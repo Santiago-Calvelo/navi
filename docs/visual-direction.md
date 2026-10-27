@@ -6,6 +6,8 @@ NAVI debe sentirse como una presencia de la computadora integrada en el escritor
 
 ## Implementado
 
+- Palimpsesto de inicio (2026-10-26): una frase entre 48 originales, con alusiones sutiles a Lain mediante señal, cables, ecos, reflejos y capas. Letras serif claras con registros desplazados verde pálido; reunión, lectura quieta y dispersión durante seis segundos. Sin leyendas del laboratorio ni panel de fondo. El experimento original se preserva. La rotación evita repetir frases hasta agotar cada ciclo; lectura y ritmo pendientes de evaluación del usuario. [ADR 0007](decisions/0007-palimpsesto-de-inicio.md).
+
 - Negro azulado, verde desaturado y tipografía técnica solicitada a DirectWrite: Cascadia Mono con sustitución del sistema.
 - Indicador persistente de 88 × 28 DIP, tarjeta inicial de 320 × 104 DIP y consola conservada.
 - SignalField, ContextFragment, LayerStack v1/v2, FracturedHalo y microreacciones del cursor, mediante geometría real y alpha por píxel.
@@ -20,7 +22,7 @@ La consolidación posterior sustituye Tu espacio: se escribe en el compacto. Al 
 
 LayerStack v2 sólo foco; FracturedHalo sólo resultado de acciones, rojo si falla, durante 1,8 segundos con posición/ángulo resueltos por aparición en monitor enfocado. ClickPulse sólo clic y DragConnector sólo arrastre con origen fijo entre monitores. ActionProjection y v1 se retiran del catálogo activo. Sutura y SignalField siguen sin función cotidiana; ContextFragment con apps reales queda por definir, no se simula como dato real. La valoración física y estética de esta consolidación está pendiente. Véase ADR 0006.
 
-Véanse [efectos](PARALLEL_EFFECTS.md) y [validación](validation.md).
+Véanse [arquitectura de efectos](architecture.md) y [validación](validation.md).
 
 ## Hito 2 — identidad temporal
 

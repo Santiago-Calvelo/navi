@@ -288,4 +288,5 @@ pub mod action_visual;
 pub mod cursor;
 pub mod holograms;
 pub mod reactions;
+pub mod startup;
 pub mod visual;

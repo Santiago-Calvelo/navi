@@ -163,6 +163,9 @@ impl Drop for Overlay {
 }
 
 pub(super) unsafe fn sync(hwnd: HWND, app: &mut App) {
+    if startup::sync(hwnd, app) {
+        return;
+    }
     let now = app.now();
     app.reactions.prune(now);
     app.surfaces.expire_focus_effect(now);

@@ -1,5 +1,15 @@
 # Validación reproducible
 
+Los informes auxiliares, capturas y logs históricos fueron eliminados por pedido del usuario el 2026-10-26. Los resultados antiguos que siguen son resúmenes históricos, sin artefactos locales conservados; no representan comprobaciones actuales. Los scripts auxiliares de medición/exportación también fueron retirados. Para el agente sólo está autorizado `scripts/build-run.ps1` y su salida `OK`, según [AGENTS.md](../AGENTS.md); los procedimientos adicionales históricos no autorizan su ejecución por agentes.
+
+## Palimpsesto de inicio — 2026-10-26
+
+Corrección tipográfica posterior, aprobada por el usuario: el avance fijo se sustituye por posiciones y métricas DirectWrite, con línea completa durante lectura y ajuste al ancho útil. `.\scripts\build-run.ps1` terminó con código 0 y última línea `OK`; release actualizado y reiniciado, evidencia en [progress.md](progress.md). El usuario debe comprobar separación natural dentro de palabras, espacios entre palabras, centrado y ausencia de recorte durante lectura; el agente no ejecuta estas comprobaciones.
+
+Comando de entrega: `.\scripts\build-run.ps1`, desde `F:\navi`: código 0 y última línea `OK`, build release offline y reinicio oficial completados. El script conserva el handle de Cargo y espera al proceso con `WaitForExit()` para evitar una espera indefinida observada con `Start-Process -Wait`. Evidencia y limitaciones en [progress.md](progress.md). No se ejecutaron tests ni QA por el agente.
+
+Validación manual exclusiva del usuario: iniciar `F:\navi\target\release\navi-app.exe`; comprobar que la frase se reúne, permanece legible y se dispersa a los seis segundos, dejando sólo el indicador. Reiniciar normalmente para observar otra frase: hay 48 por ciclo y la bolsa persiste en `%LOCALAPPDATA%\NAVI\startup-phrases.txt`. Eliminar o corromper ese archivo reinicia la rotación; un fallo de escritura se informa en `%TEMP%\navi-startup-error.log` y limita la garantía entre arranques. Comprobar que no roba foco ni captura clics, que invocar NAVI retira el texto, y que pantalla completa, DPI, monitores y desactivación se comportan según [ADR 0007](decisions/0007-palimpsesto-de-inicio.md). Sin movimiento debe verse una frase estática temporal. No se afirma validación física, visual o de rendimiento hasta que el usuario la reporte.
+
 ## Consolidación compacta — vigente, 2026-10-22
 
 Esta sección sustituye los recorridos anteriores de Tu espacio, ActionProjection y selectores de familias. Los apartados de etapas previas se conservan como evidencia histórica, no como controles actuales.
@@ -29,7 +39,7 @@ Prueba manual **pendiente**:
 
 Estado oficial/metadata en [progress.md](progress.md); decisión [ADR 0006](decisions/0006-consolidacion-compacto-y-efectos.md). No se reejecutó el runner histórico de captura compuesta antes denegado.
 
-Fecha: 2026-10-22. Windows 10/11 x64, Rust MSVC estable, Windows SDK y Visual Studio Build Tools para C++. Shell: PowerShell. Los resultados históricos están en [VALIDATION.md](../VALIDATION.md); esta guía define cómo repetirlos sin confundirlos con pruebas de la etapa nueva.
+Fecha: 2026-10-22. Windows 10/11 x64, Rust MSVC estable, Windows SDK y Visual Studio Build Tools para C++. Shell: PowerShell. El informe histórico raíz se retiró durante la limpieza; esta guía conserva los procedimientos sin confundirlos con pruebas de la etapa nueva.
 
 ## Comandos
 
@@ -80,13 +90,13 @@ Resultado físico aún pendiente. Si existe una instancia anterior, cerrarla des
 
 ## Evidencia histórica
 
-La etapa visual reportó 41 tests y 56 checks nativos aprobados, más mediciones CPU/RAM/GPU. El usuario confirmó la ruta de foco anterior; la revisión visual nueva y mouse físico permanecen pendientes según [PARALLEL_EFFECTS.md](PARALLEL_EFFECTS.md). Los nuevos resultados se consolidarán en [progress.md](progress.md).
+La etapa visual reportó 41 tests y 56 checks nativos aprobados, más mediciones CPU/RAM/GPU. El usuario confirmó la ruta de foco anterior; la revisión visual nueva y mouse físico permanecían pendientes en el informe retirado. Los resultados vigentes se consolidan en [progress.md](progress.md).
 
 ## Resultado de etapa 1 — 2026-10-21
 
-59 tests de lógica/estado/geometría aprobados; formato, Clippy de todos los targets con `-D warnings` y release offline aprobados. El [reporte nativo](../artifacts/text-core/compact.json) registra 64 checks aprobados: 56 anteriores y ocho de submit real, worker/mensajes, hora, confirmación/cancelación, derivación, borradores y contracción. La captura `text-confirmation.png` también se inspeccionó: texto y leyenda de confirmación visibles dentro de la tarjeta.
+59 tests de lógica/estado/geometría reportados como aprobados; formato, Clippy de todos los targets con `-D warnings` y release offline aprobados en aquel hito. El reporte nativo retirado registraba 64 checks aprobados: 56 anteriores y ocho de submit real, worker/mensajes, hora, confirmación/cancelación, derivación, borradores y contracción. La captura `text-confirmation.png`, también retirada, se reportó inspeccionada con texto y leyenda de confirmación visibles dentro de la tarjeta.
 
-Microbenchmark release de las herramientas reales de sólo lectura, 500 resultados correctos por herramienta. Valores convertidos de nanosegundos a microsegundos del [JSON generado](../artifacts/text-core/text-latency.json):
+Microbenchmark histórico release de las herramientas reales de sólo lectura, 500 resultados correctos reportados por herramienta. Valores convertidos de nanosegundos a microsegundos del JSON generado, retirado durante la limpieza:
 
 | Herramienta | Routing p50 | Routing p95 | Ejecución p50 | Ejecución p95 |
 |---|---:|---:|---:|---:|
@@ -97,7 +107,7 @@ Son mediciones de esta máquina y de los límites descritos arriba, no objetivos
 
 ## Panel y acciones — 2026-10-22
 
-63 tests aprobados (17 núcleo, 21 estado, 20 plataforma y 5 render); formato, Clippy con `-D warnings` y build release offline aprobados. El diagnóstico nativo terminó con código 0 y [71 comprobaciones aprobadas](../artifacts/user-panel/compact.json): mantiene las 64 anteriores y añade siete sobre panel separado, foco, Escape/indicador, borrador, botón/worker/reloj, alpha/estilos pasivos, vencimiento y desactivación. Las capturas de ventanas propias se inspeccionaron en `artifacts/user-panel/user-panel.png` y `action-projection.png`.
+63 tests reportados como aprobados (17 núcleo, 21 estado, 20 plataforma y 5 render); formato, Clippy con `-D warnings` y build release offline aprobados en aquel hito. El diagnóstico nativo se reportó con código 0 y 71 comprobaciones aprobadas: mantiene las 64 anteriores y añade siete sobre panel separado, foco, Escape/indicador, borrador, botón/worker/reloj, alpha/estilos pasivos, vencimiento y desactivación. Sus informes y capturas se retiraron durante la limpieza.
 
 Los tests prueban ejecución directa y errores con host falso; el harness conserva su política estricta para solicitar/cancelar calculadora sin abrirla. ActionProjection se reproduce sintéticamente. No se probó el atajo con teclado físico ni se abrió calculadora realmente. No se midieron CPU/RAM/GPU de este efecto nuevo. La prueba manual de esta guía sigue pendiente.
 
@@ -164,7 +174,7 @@ cargo build --release --offline -p navi-app
 - Formato y Clippy con `-D warnings`: aprobados. Diff de módulos afectados sin errores al usar la configuración CRLF del repositorio. Forzar `core.autocrlf=false` trató finales CRLF como whitespace; no se normalizaron archivos ajenos.
 - Primera ejecución de fmt/test: etiqueta nueva no UTF-8; corregida. Primera suite: dos umbrales de continuidad demasiado estrictos para velocidades continuas previstas; corregidos usando cota de derivada y extensión máxima subpíxel a delta .0001. Clippy detectó un retorno redundante y helper de 13 argumentos; corregidos sin desactivar lints. Se repitieron las comprobaciones tras la adaptación geométrica final.
 - Release inicial bloqueado por `Acceso denegado (os error 5)` al reemplazar el canónico, mientras PID 12636 seguía abierto. No se finalizó a la fuerza ni se creó otra entrega. Se reintentó después del cierre normal y Cargo terminó correctamente. Metadata/hash finales en [progress.md](progress.md).
-- Revisión independiente de código aceptada, sin ejecución duplicada de Cargo por el revisor: [informe](agent-work/2026-10-22-hito2/04-validation/review.md). La adaptación final de proporciones Sutura y su repetición de pruebas las comprobó el integrador.
+- Revisión independiente de código reportada como aceptada, sin ejecución duplicada de Cargo por el revisor; el informe auxiliar se retiró durante la limpieza. La adaptación final de proporciones Sutura y su repetición de pruebas fueron reportadas por el integrador.
 
 ### Recorridos manuales pendientes
 

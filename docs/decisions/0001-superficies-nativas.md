@@ -21,4 +21,4 @@ Conservar la ruta Direct2D habitual y un único overlay decorativo por manifesta
 
 La rasterización actual puede consumir CPU durante los efectos; no se afirma render GPU en toda la ruta. Alpha, transparencia al clic, foco y liberación se verifican mediante checks nativos propios; DPI mixto físico y fullscreen exclusivo siguen pendientes. Cambiar esta ruta requiere justificar un ADR que sustituya esta decisión.
 
-Referencias: [arquitectura](../architecture.md), [validación histórica](../../VALIDATION.md), [efectos](../PARALLEL_EFFECTS.md).
+Referencias vigentes: [arquitectura](../architecture.md) y [validación](../validation.md). Los informes históricos enlazados originalmente se retiraron por limpieza explícita del usuario el 2026-10-26; la decisión permanece sin cambios.
